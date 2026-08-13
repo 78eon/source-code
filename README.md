@@ -3,21 +3,7 @@
 Simulation-only reinforcement learning agent for attack-path discovery on randomised
 enterprise topologies, with a CVE/CVSS-severity-weighted reward.
 
-MSc dissertation project (CT7P01NI). **Essential tier.** Simulation only — no live,
-production or third-party network is used, and no human subjects are involved.
 
-## Status
-
-| Component | State |
-|---|---|
-| Module 0 — frozen CVE catalogue (SQLite + SHA-256 manifest) | done, tested |
-| Reward core — CVE/CVSS × weight + tactic bonus, sparse toggle | done, tested |
-| Module 4 — PostgreSQL episode logger | done, tested |
-| Topology generator + NASim adapter + random rollout | done, tested |
-| PPO training loop (`src/rlredteam/train.py`) | done, trains and logs |
-| Evaluation n=10 | protocol specified, runs not yet done |
-
-173 training tests plus 28 GUI tests, ruff clean.
 
 ## Quick start
 

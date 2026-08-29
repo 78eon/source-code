@@ -3,10 +3,11 @@
 Simulation-only reinforcement learning agent for attack-path discovery on randomised
 enterprise topologies, with a CVE/CVSS-severity-weighted reward.
 
-The repository now includes a typed enterprise simulator covering network segments, hosts,
-services, applications, APIs, identities, databases, cloud resources, security controls and
-data assets. Its Nmap/OpenVAS-like actions are offline graph-state transitions, never live
-scanning.
+The repository includes a typed, partially observable on-prem enterprise simulator covering
+network segments, hosts, services, applications, APIs, identities, databases, security
+controls and data assets. `TrueTopology`, `AgentKnowledge` and `Observation` are explicit
+separate layers, and opaque discovery-order action slots do not reveal hidden entity names or
+counts. Its Nmap/OpenVAS-like actions are offline graph-state transitions, never live scanning.
 
 An unprivileged, scope-gated backend is also provided for evidence collection in an explicitly
 authorized isolated hybrid lab. It performs conservative discovery and imports Greenbone
@@ -74,6 +75,7 @@ src/rlredteam/
   reward.py          The reward engine: shaped / sparse / native modes.
   topology.py        Seeded nasim.generate wrapper + config hashing.
   nasim_adapter.py   The only module that knows about both NASim and the reward core.
+  enterprise/        Hidden truth, agent knowledge, observations and on-prem simulator.
   train.py           PPO entry point: seeding, episode collection, logging.
   storage/           Module 4: PostgreSQL schema and batched episode logger.
 

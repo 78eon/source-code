@@ -9,4 +9,4 @@ experiment:
   postgres: true
   log_steps: true
   frozen_inputs: configs/frozen_experiment_01_convergence_pilot.json
-  metrics: configs/metrics_convergence_amendment.yaml
+  metrics: configs/metrics_convergence_pilot.yaml

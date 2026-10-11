@@ -108,7 +108,11 @@ class OnPremTopologyConfig:
 
 @dataclass(frozen=True, slots=True)
 class OnPremGeneralisationSplit:
-    """Preregistered disjoint topology seed sets."""
+    """Existing pilot topology pools; not registration of the final study.
+
+    Topology seeds determine structure, not PPO RNG or episode randomness.
+    Final campaign registration is a separate, supervisor-approved artifact.
+    """
 
     train: tuple[int, ...] = tuple(range(1, 61))
     validation: tuple[int, ...] = tuple(range(1001, 1021))
@@ -328,6 +332,9 @@ class OnPremCurriculumEnv(gym.Env):
         return self._env.knowledge
 
     def reset(self, *, seed: int | None = None, options: dict | None = None):
+        # Gym's seed is episode randomness (including pool selection if no
+        # explicit topology_seed is supplied). Held-out evaluation pins the
+        # topology through options; changing only seed is not generalisation.
         super().reset(seed=seed)
         requested = (options or {}).get("topology_seed")
         if requested is not None:

@@ -12,6 +12,8 @@ Two NASim facts drive the design, both verified against nasim 0.12.0:
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 import gymnasium as gym
 import numpy as np
 from nasim.envs.action import (
@@ -88,9 +90,9 @@ def _count(raw: object) -> int:
     non-mapping collections retain the historical interpretation. Unknown
     mapping value shapes fail explicitly instead of fabricating discoveries.
     """
-    if not raw:
+    if raw is None:
         return 0
-    if isinstance(raw, dict):
+    if isinstance(raw, Mapping):
         if not all(type(value) is bool for value in raw.values()):
             raise AdapterError("NASim discovery mapping requires boolean host flags")
         return sum(raw.values())

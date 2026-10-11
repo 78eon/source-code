@@ -13,6 +13,7 @@ from rlredteam.enterprise.generalisation import (
     OnPremExperimentConfig,
     distribution_manifest,
     evaluate_policy,
+    policy_digest,
     reconstruct_attack_path,
     write_evaluation_package,
 )
@@ -68,11 +69,12 @@ def test_distribution_manifest_covers_every_disjoint_seed() -> None:
     assert all(len(value) == 64 for group in manifest.values() for value in group.values())
 
 
-def test_evaluation_refuses_training_topology_overlap() -> None:
+@pytest.mark.parametrize("seeds", [(1,), (60,), (1001, 42), (2001, 60)])
+def test_evaluation_refuses_training_topology_overlap(seeds) -> None:
     with pytest.raises(GeneralisationError, match="overlap"):
         evaluate_policy(
             HighestValidPolicy(),
-            topology_seeds=(1,),
+            topology_seeds=seeds,
             evaluation_episode_seeds=(9001,),
         )
 
@@ -97,6 +99,70 @@ def test_unseen_evaluation_is_masked_frozen_and_reconstructable() -> None:
     assert any(step["action_kind"] == "exploit" for step in causal)
     assert len(causal) < len(steps)
     assert torch.equal(before, model.policy.weight)
+
+
+def test_policy_inputs_stay_knowledge_only_after_discovery() -> None:
+    from rlredteam.enterprise.environment import EnterpriseActionType
+
+    env = OnPremCurriculumEnv((1001,))
+    env.reset(seed=9001, options={"topology_seed": 1001})
+    action = env.action_index(EnterpriseActionType.DISCOVER_NETWORK, "segment_edge")
+    env.step(action)
+    expected_observation = env._env._observation().copy()
+    expected_mask = env.action_masks().copy()
+
+    class ForbiddenTruth:
+        def __getattribute__(self, name):
+            raise AssertionError(f"policy input read hidden topology: {name}")
+
+    env._env.true_topology = ForbiddenTruth()
+    assert np.array_equal(env._env._observation(), expected_observation)
+    assert np.array_equal(env.action_masks(), expected_mask)
+    env.close()
+
+
+def test_real_maskable_ppo_evaluation_has_no_updates_and_separate_seeds(monkeypatch):
+    """Untrained weights, four bounded steps per episode; never calls learn."""
+    from dataclasses import replace
+
+    from sb3_contrib import MaskablePPO
+
+    config = replace(OnPremTopologyConfig.from_yaml(), max_steps=4)
+    monkeypatch.setattr(OnPremTopologyConfig, "from_yaml", classmethod(lambda cls: config))
+    env = OnPremCurriculumEnv((1001,), config=config)
+    model = MaskablePPO("MlpPolicy", env, seed=42, n_steps=8, batch_size=8,
+                        policy_kwargs={"net_arch": [8]}, device="cpu")
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("evaluation attempted a training update")
+
+    monkeypatch.setattr(model, "learn", forbidden)
+    monkeypatch.setattr(model, "train", forbidden)
+    monkeypatch.setattr(model.policy.optimizer, "step", forbidden)
+    before = policy_digest(model)
+    episodes, steps = evaluate_policy(
+        model, topology_seeds=(1001, 2001), evaluation_episode_seeds=(42, 9001)
+    )
+    assert policy_digest(model) == before
+    assert model.num_timesteps == 0
+    assert {(row["topology_seed"], row["evaluation_seed"]) for row in episodes} == {
+        (1001, 42), (1001, 9001), (2001, 42), (2001, 9001)
+    }
+    assert len(steps) <= 16
+    assert all(row["invalid_mask_selections"] == 0 for row in episodes)
+    env.close()
+
+
+def test_frozen_evaluation_rejects_policy_weight_mutation():
+    class MutatingPolicy(HighestValidPolicy):
+        def predict(self, *args, **kwargs):
+            with torch.no_grad():
+                self.policy.weight.add_(1)
+            return super().predict(*args, **kwargs)
+
+    with pytest.raises(GeneralisationError, match="parameters changed"):
+        evaluate_policy(MutatingPolicy(), topology_seeds=(1001,),
+                        evaluation_episode_seeds=(9001,))
 
 
 def test_evaluation_package_contains_raw_trajectory_and_summary(tmp_path) -> None:

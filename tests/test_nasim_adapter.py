@@ -136,9 +136,26 @@ def test_historical_len_defect_witness() -> None:
     assert _count(raw) == 0
 
 
-def test_subnet_discovery_map_rejects_unknown_value_shape() -> None:
+@pytest.mark.parametrize("value", [1, 0, "true", None, {"discovered": True}])
+def test_subnet_discovery_map_rejects_unknown_value_shape(value) -> None:
     with pytest.raises(AdapterError, match="boolean"):
-        _count({(1, 0): {"discovered": True}})
+        _count({(1, 0): value})
+
+
+def test_count_supports_mapping_protocol_not_only_dict() -> None:
+    from collections import UserDict
+    from types import MappingProxyType
+
+    for mapping_type in (UserDict, MappingProxyType):
+        assert _count(mapping_type({"a": True, "b": False})) == 1
+        assert _count(mapping_type({"a": False, "b": False})) == 0
+        with pytest.raises(AdapterError, match="boolean"):
+            _count(mapping_type({"a": 1}))
+
+
+@pytest.mark.parametrize("raw", [["a", "b"], ("a", "b"), {"a", "b"}])
+def test_ordinary_discovery_collections_use_length(raw) -> None:
+    assert _count(raw) == 2
 
 
 @pytest.mark.parametrize(

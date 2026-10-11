@@ -3,6 +3,12 @@
 This module is simulation-only. Policy decisions receive an Observation and an
 AgentKnowledge-derived mask; realised topology is read only after a decision to
 produce provenance and evaluation evidence.
+
+Persisted seed vocabulary: training_seed is PPO/model RNG; topology_seed is
+network structure; evaluation_seed in episode/step rows is episode randomness
+(evaluation_episode_seeds in configuration). A new episode seed alone is not
+an unseen topology. The existing 50,176-step configuration is a development
+pilot, not registration or a final ten-seed research claim.
 """
 
 from __future__ import annotations
@@ -122,7 +128,7 @@ class OnPremExperimentConfig:
 def distribution_manifest(
     split: OnPremGeneralisationSplit, topology_config: OnPremTopologyConfig
 ) -> dict:
-    """Hash every preregistered topology so split membership is auditable."""
+    """Hash the configured pilot topology pools; this does not register a study."""
     from rlredteam.enterprise.onprem import generate_onprem_topology
 
     groups = {}

@@ -99,10 +99,77 @@ def test_invalid_capacity_fails_closed() -> None:
 
 def test_generalisation_splits_are_nonempty_and_disjoint() -> None:
     split = OnPremGeneralisationSplit()
+    assert split.train == tuple(range(1, 61))
+    assert split.validation == tuple(range(1001, 1021))
+    assert split.test == tuple(range(2001, 2021))
     assert split.train and split.validation and split.test
     assert not set(split.train) & set(split.validation)
     assert not set(split.train) & set(split.test)
     assert not set(split.validation) & set(split.test)
+
+
+def test_all_split_topologies_have_disjoint_content_and_constant_spaces() -> None:
+    """Check structure too: the existing digest includes the seed-labelled name."""
+    import hashlib
+    import json
+
+    split = OnPremGeneralisationSplit()
+    config = OnPremTopologyConfig.from_yaml()
+    hashes, content_hashes = {}, {}
+    reference = make_env(1)
+    for name in ("train", "validation", "test"):
+        hashes[name], content_hashes[name] = set(), set()
+        for seed in getattr(split, name):
+            topology = generate_onprem_topology(seed, config)
+            assert topology_digest(topology) == topology_digest(
+                generate_onprem_topology(seed, config)
+            )
+            hashes[name].add(topology_digest(topology))
+            content = topology.to_dict()
+            content.pop("name")  # independent of the seed identifier itself
+            content_hashes[name].add(hashlib.sha256(
+                json.dumps(content, sort_keys=True).encode()
+            ).hexdigest())
+            env = make_env(seed)
+            observation, _ = env.reset(seed=9001)
+            assert env.action_space == reference.action_space
+            assert env.observation_space == reference.observation_space
+            assert env.actions == reference.actions
+            assert env.observation_space.contains(observation)
+            env.close()
+    for groups in (hashes, content_hashes):
+        assert not groups["train"] & groups["validation"]
+        assert not groups["train"] & groups["test"]
+        assert not groups["validation"] & groups["test"]
+    reference.close()
+
+
+def test_episode_seed_does_not_redefine_explicit_topology_seed() -> None:
+    env = OnPremCurriculumEnv((1001, 1002))
+    hashes = []
+    for episode_seed in (42, 9001, 9002):
+        _, info = env.reset(seed=episode_seed, options={"topology_seed": 1001})
+        assert info["topology_seed"] == 1001
+        hashes.append(info["topology_hash"])
+    assert len(set(hashes)) == 1
+    env.close()
+
+
+def test_enterprise_discovery_is_unique_and_repeat_does_not_inflate_counts() -> None:
+    env = make_env(1)
+    env.reset(seed=9001)
+    before = set(env.knowledge.discovered)
+    action = env.action_index(EnterpriseActionType.DISCOVER_NETWORK, "segment_edge")
+    _, _, _, _, info = env.step(action)
+    after = set(env.knowledge.discovered)
+    assert after - before
+    assert info["known_nodes"] == len(before) + len(after - before)
+    _, _, _, _, repeated = env.step(action)
+    assert set(env.knowledge.discovered) == after
+    assert len(env.knowledge.discovery_order) == len(after)
+    assert repeated["known_nodes"] == len(after)
+    assert not repeated["event"].state_changed
+    env.close()
 
 
 def test_spaces_and_initial_policy_inputs_do_not_reveal_hidden_topology() -> None:

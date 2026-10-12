@@ -49,6 +49,7 @@ class TwinRelationType(StrEnum):
     CONNECTS_TO = "connects_to"
     DEPENDS_ON = "depends_on"
     AUTHENTICATES_TO = "authenticates_to"
+    TRUSTS = "trusts"
     PROTECTS = "protects"
     CONTAINS = "contains"
     ASSOCIATED_WITH = "associated_with"

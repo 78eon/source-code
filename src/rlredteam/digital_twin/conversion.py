@@ -16,12 +16,31 @@ class SimulationConversionPolicy:
     permit_unknown_service_version: bool = False
     vulnerability_minimum_status: ApplicabilityStatus = ApplicabilityStatus.CONFIRMED
     version: str = "simulation-conversion-contract-v1"
+    reject_unresolved_relationship_conflicts: bool = True
+    reject_dangling_relations: bool = True
+    permit_inferred_relationships: bool = True
+    minimum_asset_confidence: float = 0.5
+    permit_synthetic_assumptions: bool = False
+    require_assumption_approval: bool = True
+    maximum_synthetic_assumptions: int = 32
+    require_deterministic_action_space: bool = True
+    require_feasible_attack_path: bool = True
+    preserve_evidence_backlinks: bool = True
+    max_nodes: int = 96
+    max_vulnerabilities: int = 16
 
     def __post_init__(self):
         v.validate_fields(self)
         object.__setattr__(
             self, "minimum_relationship_confidence", v.bounded(self.minimum_relationship_confidence)
         )
+        v.bounded(self.minimum_asset_confidence)
+        if not 0 <= self.maximum_synthetic_assumptions <= 1024:
+            raise v.ModelError("assumption limit must be 0..1024")
+        if not 1 <= self.max_nodes <= 256 or not 1 <= self.max_vulnerabilities <= 256:
+            raise v.ModelError("fixed simulation capacities must be 1..256")
+        if not self.preserve_evidence_backlinks or not self.require_deterministic_action_space:
+            raise v.ModelError("evidence backlinks and bounded action spaces are mandatory")
         if self.vulnerability_minimum_status == ApplicabilityStatus.NOT_APPLICABLE:
             raise v.ModelError("NOT_APPLICABLE is not an admissible vulnerability threshold")
         if self.version != "simulation-conversion-contract-v1":

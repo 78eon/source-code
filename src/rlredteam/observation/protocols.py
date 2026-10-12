@@ -8,6 +8,7 @@ class ObservationMode(StrEnum):
     OFFLINE_IMPORT = "OFFLINE_IMPORT"
     MANUAL = "MANUAL"
     LIVE_LAB = "LIVE_LAB"
+    LOOPBACK_TEST = "LOOPBACK_TEST"
 
 
 class Capability(StrEnum):
@@ -30,4 +31,20 @@ class Capability(StrEnum):
 
 
 class LiveObservationDisabledError(ValueError):
-    """Phase 4A never permits live execution, even with configuration approval."""
+    """Network activation is denied unless every required gate passes."""
+
+
+class AuthorizationRequiredError(LiveObservationDisabledError):
+    pass
+
+
+class OutOfScopeTargetError(LiveObservationDisabledError):
+    pass
+
+
+class CapabilityDeniedError(LiveObservationDisabledError):
+    pass
+
+
+class ObservationBudgetExceededError(LiveObservationDisabledError):
+    pass

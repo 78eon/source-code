@@ -1,10 +1,32 @@
-# Native Observation Engine — offline foundations
+# Native Observation Engine — offline foundations and gated read-only transport
 
-LIVE LAB EXECUTION IS DISABLED PENDING SCOPE/ETHICS APPROVAL.
+READ-ONLY OBSERVATION ONLY.
+REAL LAB EXECUTION REQUIRES SEPARATE PROJECT/SUPERVISOR APPROVAL.
 
-Phase 4A accepts synthetic fixtures, native offline JSON, supplied manual data and
+The Phase 4A offline path accepts synthetic fixtures, native offline JSON, supplied manual data and
 deterministic mock transports only. Capability declarations do not implement
-acquisition. No sockets, LAN enumeration, subprocess scanners or legacy lab imports.
+acquisition. It still opens no sockets and has no legacy lab dependency.
+
+Phase 4B adds `ObservationEngine` / `HostObserver` and a separate
+`AsyncTcpObservationTransport`. `LOOPBACK_TEST` permits only 127/8 and ::1;
+localhost uses a static loopback mapping, never external DNS. `LIVE_LAB` needs
+an enabled scope, bound and unexpired AuthorizationRecord, explicit runtime flag,
+exact permitted target and capability at every connection. Supplying a serialized
+session alone never activates execution. Offline `start_session` remains offline.
+
+The CLI `scripts/observe_lab.py --mode loopback-test --target 127.0.0.1 --ports PORT`
+requires an explicit running local fixture; do not substitute real network targets.
+Optional capabilities: `--capabilities tcp banner tls http`; HTTP-over-TLS also
+requires the TLS capability and explicit `--tls-ports PORT`. API callers may supply
+an approved CA file; certificate validation cannot be disabled. No GET fallback,
+redirect following, authentication, vulnerability probing or arbitrary payload API.
+
+Only loopback fixtures inside Podman `--network none` were tested. Raw data and
+hash-chained audit are kept in memory by default. `--output-directory` opts into
+immutable private JSON storage, including aborted-session partial evidence/audit.
+The files are individually atomic, not a multi-file transaction. Evidence remains
+an ENGINEERING_EXTENSION; mode is retained in provenance, and no live collection
+is silently registered as research. Unknown facts and candidate status stay explicit.
 
 ```python
 from rlredteam.observation.serialization import dumps, loads, import_bundle

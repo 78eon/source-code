@@ -8,6 +8,8 @@ from enum import StrEnum
 from rlredteam.knowledge import validation as v
 from rlredteam.knowledge.serialization import digest
 
+from .native_hints import disclosed_software, mysql_greeting
+
 
 class SoftwarePrecision(StrEnum):
     EXACT = "EXACT"
@@ -113,6 +115,8 @@ def classify(observations):
             "version",
             "version_range",
             "device_hints",
+            "http_headers",
+            "banner_hex",
         ):
             if key in raw.raw_fields:
                 feature = FingerprintFeature(
@@ -159,6 +163,17 @@ def classify(observations):
 
         fields = raw.raw_fields
         port, protocol = fields.get("port"), fields.get("protocol")
+        banner = str(fields.get("banner", ""))
+        if re.match(r"^SSH-(?:2\.0|1\.99)-", banner):
+            candidate("service", "SSH-like", 0.85, ("banner",), "ssh-identification-v1")
+        if re.match(r"^220[ -].*\b(?:ESMTP|SMTP)\b", banner, re.IGNORECASE):
+            candidate("service", "mail-service", 0.8, ("banner",), "smtp-greeting-v1")
+        if mysql_greeting(fields):
+            candidate(
+                "service", "mysql-protocol-family", 0.75, ("banner_hex",), "mysql-greeting-v1"
+            )
+        if fields.get("tls") is True and fields.get("http") is True:
+            candidate("service", "HTTPS-like", 0.9, ("tls", "http"), "tls-plus-http-v1")
         if port == 443:
             confirmed = fields.get("tls") is True or protocol in ("tls", "https")
             candidate(
@@ -178,6 +193,9 @@ def classify(observations):
                 "port-plus-ssh-v1" if confirmed else "port-only-weak-v1",
             )
         product, version = fields.get("product"), fields.get("version")
+        disclosed = disclosed_software(fields)
+        if not product and disclosed:
+            product, version, _ = disclosed
         match = re.fullmatch(
             r"([A-Za-z][A-Za-z0-9_.-]{0,63})/([0-9][A-Za-z0-9_.+-]{0,63})",
             str(fields.get("banner", "")),
@@ -193,14 +211,18 @@ def classify(observations):
             if fields.get("version_range") and not version:
                 precision, version = SoftwarePrecision.VERSION_RANGE, fields["version_range"]
             keys = tuple(
-                key for key in ("product", "version", "version_range", "banner") if key in selected
+                key
+                for key in ("product", "version", "version_range", "banner", "http_headers")
+                if key in selected
             )
             item = candidate(
                 "software",
                 product,
                 0.85 if precision == SoftwarePrecision.EXACT else 0.5,
                 keys,
-                "explicit-software-fields-v1",
+                disclosed[2]
+                if disclosed and not fields.get("product")
+                else "explicit-software-fields-v1",
                 precision,
                 version,
             )

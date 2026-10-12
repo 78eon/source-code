@@ -10,9 +10,12 @@ from .models import ObservationSession, SessionStatus
 from .protocols import LiveObservationDisabledError, ObservationMode
 
 
-def create_session(*, scope, authorization=None, **kwargs):
+def create_session(*, scope, authorization=None, enable_live_lab=False, **kwargs):
     if kwargs.get("mode") == ObservationMode.LIVE_LAB:
-        raise LiveObservationDisabledError("Phase 4A has no live observation execution path")
+        if enable_live_lab is not True or not scope.live_enabled or authorization is None:
+            raise LiveObservationDisabledError(
+                "explicit live activation and authorization required"
+            )
     if authorization is not None:
         authorization.validate(scope, at=kwargs["created_at"])
     requested = kwargs.get("requested_capabilities", ())

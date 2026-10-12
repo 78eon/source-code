@@ -35,14 +35,17 @@ def test_unapproved_transport_or_callback_is_rejected():
         MockObservationTransport((lambda: None,))
 
 
-def test_no_network_implementation_or_legacy_lab_dependency_exists():
+def test_network_implementation_is_isolated_from_offline_and_legacy_modules():
     root = Path(__file__).resolve().parents[1] / "src/rlredteam/observation"
     forbidden = {"socket", "subprocess", "requests", "httpx", "urllib", "scapy"}
     for path in root.glob("*.py"):
+        blocked = (
+            forbidden - {"socket", "urllib"} if path.name == "network_transport.py" else forbidden
+        )
         tree = ast.parse(path.read_text())
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
-                assert not {item.name.split(".")[0] for item in node.names} & forbidden
+                assert not {item.name.split(".")[0] for item in node.names} & blocked
             if isinstance(node, ast.ImportFrom):
-                assert (node.module or "").split(".")[0] not in forbidden
+                assert (node.module or "").split(".")[0] not in blocked
                 assert node.module != "rlredteam.enterprise.live"

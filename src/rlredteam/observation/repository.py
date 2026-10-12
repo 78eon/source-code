@@ -10,10 +10,12 @@ from uuid import uuid4
 from rlredteam.knowledge.serialization import digest
 from rlredteam.knowledge.validation import ModelError
 
+from .audit import AuditTrail
 from .models import ObservationBundle, ObservationSession
 from .serialization import dumps, loads
 
 MAX_BYTES = 8 * 1024 * 1024
+KINDS = {"session": ObservationSession, "bundle": ObservationBundle, "audit": AuditTrail}
 
 
 class ObservationRepository(Protocol):
@@ -23,6 +25,8 @@ class ObservationRepository(Protocol):
     def load_bundle(self, bundle_id: str) -> ObservationBundle: ...
     def list_sessions(self) -> tuple[str, ...]: ...
     def exists(self, identifier: str) -> bool: ...
+    def save_audit(self, audit: AuditTrail) -> None: ...
+    def load_audit(self, session_id: str) -> AuditTrail: ...
 
 
 class InMemoryObservationRepository:
@@ -30,7 +34,7 @@ class InMemoryObservationRepository:
         self._values = {}
 
     def _save(self, kind, key, value):
-        expected = ObservationSession if kind == "session" else ObservationBundle
+        expected = KINDS[kind]
         if not isinstance(value, expected):
             raise ModelError("wrong repository object type")
         text = dumps(value)
@@ -51,6 +55,12 @@ class InMemoryObservationRepository:
 
     def load_bundle(self, bundle_id):
         return self._load("bundle", bundle_id)
+
+    def save_audit(self, audit):
+        self._save("audit", audit.session_id, audit)
+
+    def load_audit(self, session_id):
+        return self._load("audit", session_id)
 
     def _load(self, kind, key):
         return loads(self._values[(kind, key)])
@@ -107,7 +117,7 @@ class JsonObservationRepository(InMemoryObservationRepository):
             return raw.decode("utf-8")
 
     def _save(self, kind, key, value):
-        expected = ObservationSession if kind == "session" else ObservationBundle
+        expected = KINDS[kind]
         if not isinstance(value, expected):
             raise ModelError("wrong repository object type")
         text = dumps(value)
@@ -136,10 +146,10 @@ class JsonObservationRepository(InMemoryObservationRepository):
     def _load(self, kind, key):
         with self._directory() as fd:
             result = loads(self._read(fd, self._name(kind, key)))
-        expected = ObservationSession if kind == "session" else ObservationBundle
+        expected = KINDS[kind]
         if (
             not isinstance(result, expected)
-            or getattr(result, "session_id" if kind == "session" else "bundle_id") != key
+            or getattr(result, "bundle_id" if kind == "bundle" else "session_id") != key
         ):
             raise ModelError("repository identity mismatch")
         return result
@@ -158,7 +168,7 @@ class JsonObservationRepository(InMemoryObservationRepository):
         return tuple(sorted(result))
 
     def exists(self, identifier):
-        for kind in ("session", "bundle"):
+        for kind in KINDS:
             try:
                 self._load(kind, identifier)
             except KeyError:

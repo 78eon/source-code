@@ -37,9 +37,34 @@ from .session import BudgetLimits
 
 
 def model_types():
-    from rlredteam.evidence.models import AssetIdentifier, IdentifierType
+    from rlredteam.evidence.models import AssetIdentifier, IdentifierType, Provenance
+
+    from .fingerprint_analysis import FingerprintAnalysis
+    from .fingerprint_features import ProtocolFeature
+    from .fingerprint_rules import FingerprintRule, RulePrecedence, ServiceFamily
+    from .software_inference import (
+        ConflictResolution,
+        FingerprintConflict,
+        ProductCandidate,
+        SoftwareIdentity,
+        TemporalStatus,
+    )
+    from .versioning import VersionEvidence, VersionPrecision
 
     types = (
+        FingerprintAnalysis,
+        ProtocolFeature,
+        FingerprintRule,
+        RulePrecedence,
+        ServiceFamily,
+        ConflictResolution,
+        FingerprintConflict,
+        ProductCandidate,
+        SoftwareIdentity,
+        TemporalStatus,
+        VersionEvidence,
+        VersionPrecision,
+        Provenance,
         AuditEvent,
         AuditKind,
         AuditTrail,

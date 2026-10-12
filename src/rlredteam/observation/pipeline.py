@@ -85,6 +85,41 @@ class ObservationResult:
         }
 
 
+def explain_native_twin_service(result, twin, service_id):
+    """Downstream join only: collection never imports or inspects the twin.
+
+    A TCP/TLS/HTTP chain is supported only by the raw observations actually
+    retained for this service. Missing stages are returned as empty, not inferred.
+    """
+    if twin.evidence != result.evidence.bundle:
+        raise ValueError("twin and native result have different evidence")
+    service = next((item for item in twin.services if item.stable_id == service_id), None)
+    if service is None:
+        raise KeyError(service_id)
+    evidence = tuple(result.evidence.get(key) for key in service.evidence_ids)
+    raw_ids = {item.provenance.attributes.get("raw_observation_id") for item in evidence}
+    raws = tuple(raw for raw in result.bundle.observations if raw.observation_id in raw_ids)
+    features = tuple(f for f in result.fingerprints.features if f.raw_observation_id in raw_ids)
+    feature_ids = {f.feature_id for f in features}
+    return {
+        "twin_service": service,
+        "evidence_records": evidence,
+        "raw_observations": raws,
+        "tcp_reachable_evidence": tuple(
+            r.observation_id for r in raws if r.raw_fields.get("reachable") is True
+        ),
+        "tls_evidence": tuple(r.observation_id for r in raws if r.raw_fields.get("tls") is True),
+        "http_evidence": tuple(r.observation_id for r in raws if r.raw_fields.get("http") is True),
+        "fingerprint_features": features,
+        "fingerprint_candidates": tuple(
+            c for c in result.fingerprints.candidates if set(c.supporting_feature_ids) & feature_ids
+        ),
+        "interpretation": (
+            "Observed metadata and service candidates; no proof of vulnerability or access"
+        ),
+    }
+
+
 def run_offline_pipeline(
     bundle, knowledge_registry, *, reconstruction_policy=None, conversion_policy=None
 ):

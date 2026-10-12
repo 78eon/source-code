@@ -572,7 +572,9 @@ def write_evaluation_package(
         "success_rate": sum(row["goal_reached"] for row in episodes) / len(episodes),
         "mean_steps_to_goal": (
             sum(row["steps_to_goal"] for row in episodes if row["steps_to_goal"] is not None)
-            / max(1, sum(row["steps_to_goal"] is not None for row in episodes))
+            / sum(row["steps_to_goal"] is not None for row in episodes)
+            if any(row["steps_to_goal"] is not None for row in episodes)
+            else None
         ),
         "mean_reward": sum(row["total_reward"] for row in episodes) / len(episodes),
         "mean_coverage": sum(row["discovery_coverage"] for row in episodes) / len(episodes),

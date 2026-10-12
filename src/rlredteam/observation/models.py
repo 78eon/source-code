@@ -18,6 +18,7 @@ class SessionStatus(StrEnum):
     CREATED = "CREATED"
     RUNNING = "RUNNING"
     COMPLETED = "COMPLETED"
+    ABORTED = "ABORTED"
 
 
 class RawStatus(StrEnum):
@@ -47,7 +48,7 @@ class ObservationSession:
 
     def __post_init__(self):
         v.validate_fields(self)
-        if self.mode == ObservationMode.LIVE_LAB:
+        if self.mode == ObservationMode.LIVE_LAB and self.authorization_id is None:
             raise LiveObservationDisabledError(
                 "LIVE LAB EXECUTION IS DISABLED PENDING SCOPE/ETHICS APPROVAL"
             )
@@ -71,7 +72,9 @@ class ObservationSession:
             raise v.ModelError("unstarted session has execution timestamps")
         if self.status != SessionStatus.CREATED and self.started_at is None:
             raise v.ModelError("started session requires started_at")
-        if (self.status == SessionStatus.COMPLETED) != (self.completed_at is not None):
+        if (self.status in (SessionStatus.COMPLETED, SessionStatus.ABORTED)) != (
+            self.completed_at is not None
+        ):
             raise v.ModelError("session completion status/timestamp mismatch")
 
 

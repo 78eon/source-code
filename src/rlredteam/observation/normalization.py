@@ -24,6 +24,7 @@ from rlredteam.knowledge.serialization import digest
 
 from .identity import fixture_asset_id
 from .models import RawStatus
+from .native_hints import disclosed_software
 from .protocols import Capability, ObservationMode
 
 
@@ -76,6 +77,11 @@ def normalize(bundle):
             imported_at=imported_at,
         )
         owner, fields = assignments[raw.subject_hint], raw.raw_fields
+        # Native parsing is separately versioned; historical supplied inputs keep
+        # their original normalization. The original bytes remain in raw_input.
+        disclosed = (
+            disclosed_software(fields) if raw.collector == "native-readonly-tcp-v1" else None
+        )
         status = (
             EvidenceStatus.SYNTHETIC
             if raw.status == RawStatus.SYNTHETIC
@@ -207,11 +213,16 @@ def normalize(bundle):
                     **common,
                 )
             )
-        if fields.get("product"):
-            version = fields.get("version") or fields.get("version_range")
+        product = fields.get("product") or (disclosed[0] if disclosed else None)
+        if product:
+            version = (
+                fields.get("version")
+                or fields.get("version_range")
+                or (disclosed[1] if disclosed else None)
+            )
             version_kind = (
                 "exact"
-                if fields.get("version")
+                if fields.get("version") or (disclosed and disclosed[1])
                 else "range"
                 if fields.get("version_range")
                 else "unknown"
@@ -220,7 +231,7 @@ def normalize(bundle):
                 (
                     owner,
                     fields.get("software_key", fields.get("service_key", raw.observation_id)),
-                    fields["product"],
+                    product,
                 )
             )
             records.append(
@@ -228,7 +239,7 @@ def normalize(bundle):
                     evidence_id="normalized-software:" + digest(raw.observation_id),
                     subject_id=software_id,
                     asset_id=owner,
-                    product_id=fields["product"],
+                    product_id=product,
                     version=version,
                     observation_type="software_hint",
                     value=fields,
@@ -236,6 +247,7 @@ def normalize(bundle):
                     attributes={
                         **attributes,
                         "version_kind": version_kind,
+                        **({"software_rule": disclosed[2]} if disclosed else {}),
                         **({"service_id": service_id} if service_id else {}),
                     },
                     **common,

@@ -335,7 +335,16 @@ class DigitalTwinBuilder:
                     }
                     if not kinds <= {"exact", "range", "unknown"}:
                         raise v.ModelError("invalid explicit version_kind")
-                    if len(versions) > 1 or len(kinds) > 1:
+                    fingerprint_conflicts = tuple(
+                        sorted(
+                            {
+                                key
+                                for item in records
+                                for key in item.attributes.get("fingerprint_conflicts", ())
+                            }
+                        )
+                    )
+                    if len(versions) > 1 or len(kinds) > 1 or fingerprint_conflicts:
                         state = VersionStatus.CONFLICTING
                         conflict(
                             (stable_id,),
@@ -367,7 +376,28 @@ class DigitalTwinBuilder:
                             versions=versions if state != VersionStatus.UNKNOWN else (),
                             version_status=state,
                             knowledge_ids=enrich(records, *enrichment),
-                            attributes={"reported_versions": versions},
+                            attributes={
+                                "reported_versions": versions,
+                                **(
+                                    {
+                                        "fingerprint_candidates": tuple(
+                                            sorted(
+                                                item.attributes["candidate_id"]
+                                                for item in records
+                                                if "candidate_id" in item.attributes
+                                            )
+                                        ),
+                                        "fingerprint_conflicts": fingerprint_conflicts,
+                                        "fingerprint_evidence": {
+                                            item.evidence_id: dict(item.attributes)
+                                            for item in records
+                                            if "candidate_id" in item.attributes
+                                        },
+                                    }
+                                    if any("candidate_id" in item.attributes for item in records)
+                                    else {}
+                                ),
+                            },
                             **common,
                         )
                     )

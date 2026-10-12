@@ -217,3 +217,86 @@ def test_convergence_rule_is_descriptive_and_rejects_collapse_or_nonfinite():
     assert not convergence_diagnostics([0] * 100 + [20] * 400 + [0] * 100, [row])["passed"]
     row["train/approx_kl"] = float("nan")
     assert not convergence_diagnostics([0] * 300 + [10] * 300, [row])["passed"]
+
+
+def test_preflight_cannot_be_bypassed_by_claiming_registered(monkeypatch, tmp_path):
+    from rlredteam.enterprise import onprem_protocol as module
+
+    protocol = load_protocol(ROOT / CONFIG)
+    protocol.update(
+        status="registered",
+        registered=True,
+        implementation_ready=True,
+        registration_timestamp="2026-10-12T00:00:00Z",
+    )
+    protocol["protocol_sha256"] = protocol_digest(protocol)
+    monkeypatch.setattr(
+        module,
+        "artifact_inventory",
+        lambda root: {
+            "used_topology_seeds": [],
+            "inventory_sha256": protocol["freshness"]["inventory_sha256"],
+        },
+    )
+    monkeypatch.setattr(module, "split_manifest", lambda p: {})
+    monkeypatch.setattr(
+        module,
+        "source_provenance",
+        lambda root: {
+            "git_dirty": True,
+            "git_commit": "a" * 40,
+            "source_hashes": {"runtime.py": "b" * 64},
+        },
+    )
+    report = module.verify_protocol(protocol, tmp_path)
+    assert not report["allowed_to_train"]
+    assert any("checkpoint commit" in reason for reason in report["blockers"])
+    assert "immutable registered manifest absent" in report["blockers"]
+
+
+def test_registered_runner_wiring_with_fake_learner_only(monkeypatch, tmp_path):
+    import sb3_contrib
+    import torch
+
+    from rlredteam.enterprise import registered_onprem as runner
+
+    protocol = load_protocol(ROOT / CONFIG)
+    protocol["topology"]["max_steps"] = 1
+    report = {
+        "allowed_to_train": True,
+        "protocol_sha256": "test-protocol",
+        "topology_config_sha256": "test-topology",
+        "reward_definition_sha256": "test-reward",
+        "provenance": {"source_hashes": {}, "dependency_definition_sha256": "test-deps"},
+    }
+    monkeypatch.setattr(runner, "verify_protocol", lambda *a: report)
+    monkeypatch.setenv("RLREDTEAM_IMAGE_DIGEST", protocol["container_image_id"])
+
+    class FakeLearner:
+        def __init__(self, policy, env, **kwargs):
+            assert kwargs["seed"] == 42 and kwargs["n_steps"] == 256
+            assert env.topology_seeds == tuple(range(1, 61))
+            self.env, self.policy = env, torch.nn.Linear(1, 1)
+
+        def set_logger(self, logger):
+            self.logger = logger
+
+        def learn(self, *, total_timesteps):
+            # Wiring test only: no PPO optimization, training campaign or research output.
+            assert total_timesteps == 1000192
+            self.env.reset(seed=42)
+            self.env.step(int(np.flatnonzero(self.env.action_masks())[0]))
+            self.num_timesteps = total_timesteps
+            for key in protocol["convergence"]["required_diagnostics"]:
+                self.logger.record("train/" + key, 0.1)
+
+        def save(self, path):
+            path.write_bytes(b"FAKE UNIT TEST CHECKPOINT; NOT A POLICY")
+
+    monkeypatch.setattr(sb3_contrib, "MaskablePPO", FakeLearner)
+    result = runner.train_registered_seed42(protocol, root=tmp_path)
+    assert result["training_seed"] == 42
+    assert result["final_test_evaluated"] is False
+    assert result["completed_episodes"] == 1
+    assert result["checkpoint_sha256"]
+    assert not (tmp_path / "runs/onprem-generalisation-registered/seed-43").exists()

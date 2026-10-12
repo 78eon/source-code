@@ -329,5 +329,8 @@ def verify_protocol(protocol, root=ROOT):
         "reward_definition_sha256": digest(protocol["reward"]),
         "topology_config_sha256": OnPremTopologyConfig(**protocol["topology"]).digest(),
         "freshness_inventory": inventory,
-        "budget_arithmetic": f"{protocol['total_timesteps']} % ({protocol['ppo']['n_steps']} * {protocol['n_envs']}) = 0",
+        "budget_arithmetic": (
+            f"{protocol['total_timesteps']} % "
+            f"({protocol['ppo']['n_steps']} * {protocol['n_envs']}) = 0"
+        ),
     }

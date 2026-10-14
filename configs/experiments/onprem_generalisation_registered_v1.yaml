@@ -2,7 +2,7 @@ protocol_id: onprem-generalisation-registered-v1
 protocol_version: 1
 status: registered
 registered: true
-registration_timestamp: 2026-10-14T16:07:03.381782+00:00
+registration_timestamp: '2026-10-14T16:07:03.381782+00:00'
 source_commit: e4f39c08d350bf33d6b187068366aca539884786
 source_hashes:
   src/rlredteam/enterprise/onprem.py: 9ba625cd1ffe6ab8a3789e357d0aee2b38339ac8f6ad12b0cc4908306c60890d

@@ -5,7 +5,9 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import os
 import subprocess
+import sys
 from dataclasses import asdict
 from pathlib import Path
 
@@ -19,6 +21,10 @@ SEMANTIC_DIGESTS = {
     "reward": "cc5ab301ec6c03da39fabdcbc68b0b47a800478617c90b429d168f6fceeaa000",
     "convergence": "49b12397913aeba3397619d8dd7d743d8a59e86608a8feaa49c416c0506f87fe",
     "ppo": "cd75e529e033a476a1a20e49dc387760dca601db06151c5cfedb1f12077ef815",
+    "evaluation": "d8f484db8753f5e7effd7bd1649d6845b1dc717e124a94e57cdc417821b11b3e",
+    "discovery_semantics": "d747ec44aedecdcc947555a3585c425f0e3eebdd474610107d7dfbd2b976a79d",
+    "outcomes": "2360b7479f8182054046ad491c61ac4c91203c77232080818bf589059adc635a",
+    "generator_semantics": "4233596944ed4a85eab5f08d60f9a68fc809e7ce1fc1124c058c3a9760952178",
 }
 SOURCE_PATHS = (
     "src/rlredteam/enterprise/onprem.py",
@@ -36,7 +42,22 @@ SOURCE_PATHS = (
     "scripts/verify_onprem_protocol.py",
     "src/rlredteam/enterprise/registered_onprem.py",
     "scripts/train_registered_onprem.py",
+    "src/rlredteam/enterprise/registered_validation.py",
+    "configs/onprem_topology.yaml",
 )
+IMPLEMENTATION_TESTS = (
+    "tests/test_onprem_protocol.py",
+    "tests/test_registered_validation.py",
+    "tests/test_registration_readiness.py",
+    "tests/test_onprem_generalisation.py",
+    "tests/test_onprem_topology.py",
+    "tests/test_enterprise_environment.py",
+    "tests/test_nasim_adapter.py",
+    "tests/test_reward.py",
+    "tests/test_confirmatory_discovery.py",
+    "tests/test_research_boundaries.py",
+)
+SOURCE_PATHS += IMPLEMENTATION_TESTS
 
 
 def digest(value):
@@ -219,6 +240,16 @@ def validate_design(protocol):
     if (
         protocol["evaluation"]["evaluation_episode_seeds"] != [19001]
         or protocol["evaluation"]["deterministic"] is not True
+        or protocol["evaluation"]["policy_updates"] is not False
+        or protocol["evaluation"]["policy_hash_before_after_required"] is not True
+        or protocol["evaluation"]["checkpoint_choice"] != "terminal fixed-budget checkpoint"
+        or protocol["evaluation"]["validation_schedule"]
+        != ("after each fixed-budget training run; descriptive only, no model selection or tuning")
+        or protocol["evaluation"]["final_test_schedule"]
+        != (
+            "only after all ten fixed-budget policies and configuration are frozen; "
+            "separately invoked"
+        )
     ):
         raise ValueError("registered evaluation schedule mismatch")
     if protocol["reward_implementation_sha256"] != file_hash(
@@ -253,11 +284,39 @@ def validate_design(protocol):
         "postgres_required": False,
     }:
         raise ValueError("invalid research boundary")
+    if protocol["research_boundary"] != "GENERALISATION_RESEARCH":
+        raise ValueError("incorrect research boundary label")
     if protocol.get("protocol_sha256") and protocol["protocol_sha256"] != protocol_digest(protocol):
         raise ValueError("protocol digest mismatch")
 
 
-def verify_protocol(protocol, root=ROOT):
+def _run_implementation_checks(root):
+    """Derive readiness from executed contract tests, never from a YAML boolean."""
+    code = (
+        "import socket,sys,pytest\n"
+        "def denied(*a,**k): raise AssertionError('Network forbidden')\n"
+        "socket.socket.connect=denied\nsocket.socket.connect_ex=denied\n"
+        "socket.socket.bind=denied\nsocket.socket.listen=denied\n"
+        "socket.create_connection=denied\nsocket.getaddrinfo=denied\n"
+        "sys.exit(pytest.main(sys.argv[1:]))"
+    )
+    env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", OMP_NUM_THREADS="1", MKL_NUM_THREADS="1")
+    command = [sys.executable, "-c", code, *IMPLEMENTATION_TESTS, "-q", "-p", "no:cacheprovider"]
+    try:
+        result = subprocess.run(
+            command, cwd=root, env=env, capture_output=True, text=True, timeout=360
+        )
+        return {
+            "passed": result.returncode == 0,
+            "exit_code": result.returncode,
+            "tests": list(IMPLEMENTATION_TESTS),
+            "output": result.stdout + result.stderr,
+        }
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {"passed": False, "error": str(exc)}
+
+
+def verify_protocol(protocol, root=ROOT, *, pre_registration=False):
     """Read-only pre-flight. Draft/incomplete/dirty provenance always blocks training."""
     blockers = []
     validate_design(protocol)
@@ -270,8 +329,6 @@ def verify_protocol(protocol, root=ROOT):
         blockers.append("final topology seeds were already declared/evaluated locally")
     groups = split_manifest(protocol)
     provenance = source_provenance(root)
-    if not protocol["registered"]:
-        blockers.append("protocol is draft, not registered")
     if provenance["git_dirty"]:
         blockers.append("BLOCKED BEFORE REGISTERED RUN: source checkpoint commit required.")
     source_commit = protocol.get("source_commit")
@@ -300,14 +357,10 @@ def verify_protocol(protocol, root=ROOT):
             blockers.append("registered source checkpoint does not contain exact runtime sources")
     if protocol.get("source_hashes") != provenance["source_hashes"]:
         blockers.append("registered source hashes missing or mismatched")
-    if not protocol.get("registration_timestamp") or not protocol.get("protocol_sha256"):
-        blockers.append("registration timestamp/hash missing")
-    if protocol.get("implementation_ready") is not True:
-        blockers.append("registered trainer logging/evaluation integration not yet verified")
+    if not protocol.get("protocol_sha256"):
+        blockers.append("canonical protocol hash missing")
     manifest_path = Path(root) / "runs/onprem-generalisation-registered/protocol_manifest.json"
-    if not manifest_path.is_file():
-        blockers.append("immutable registered manifest absent")
-    else:
+    if manifest_path.is_file():
         manifest = json.loads(manifest_path.read_text())
         if (
             manifest.get("registered") is not True
@@ -319,8 +372,38 @@ def verify_protocol(protocol, root=ROOT):
             blockers.append("immutable registration manifest mismatch")
     if protocol["freshness"]["inventory_sha256"] != inventory["inventory_sha256"]:
         blockers.append("local artifact inventory changed; freshness must be reviewed again")
+    if pre_registration and (
+        protocol["registered"] or protocol.get("registration_timestamp") or manifest_path.exists()
+    ):
+        blockers.append("pre-registration requires draft status and no installed registration")
+    if pre_registration and (Path(root) / "runs/onprem-generalisation-registered").exists():
+        blockers.append("registered campaign output already exists before registration")
+    checks = (
+        _run_implementation_checks(root)
+        if not blockers
+        else {"passed": False, "not_run": "source/design preflight blocked"}
+    )
+    if checks["passed"] and source_provenance(root) != provenance:
+        checks = {"passed": False, "error": "source changed during implementation checks"}
+    implementation_ready = not blockers and checks["passed"]
+    if not checks["passed"]:
+        blockers.append("implementation contract checks not passed")
+    registration_blockers = []
+    if not protocol["registered"]:
+        registration_blockers.append("protocol is draft, not registered")
+    if not protocol.get("registration_timestamp"):
+        registration_blockers.append("registration timestamp missing")
+    if not manifest_path.is_file():
+        registration_blockers.append("immutable registered manifest absent")
+    ready_for_registration = pre_registration and not blockers
+    if not pre_registration:
+        blockers.extend(registration_blockers)
     return {
-        "allowed_to_train": not blockers,
+        "allowed_to_train": not pre_registration and not blockers,
+        "ready_for_registration": ready_for_registration,
+        "implementation_ready": implementation_ready,
+        "implementation_checks": checks,
+        "registration_pending": registration_blockers,
         "blockers": blockers,
         "protocol_sha256": protocol_digest(protocol),
         "provenance": provenance,

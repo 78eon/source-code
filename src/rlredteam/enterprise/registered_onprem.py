@@ -13,12 +13,17 @@ import numpy as np
 
 from .onprem import OnPremCurriculumEnv, OnPremTopologyConfig
 from .onprem_protocol import ROOT, digest, file_hash, verify_protocol
+from .registered_validation import validate_registered_checkpoint
 
 
 class AuditedTrainingEnv(OnPremCurriculumEnv):
     """Episode RNG and topology audit stay outside the policy observation/mask."""
 
     def __init__(self, topology_seeds, *, config, training_seed, audit_path):
+        if not topology_seeds or any(
+            type(s) is not int or s not in range(1, 61) for s in topology_seeds
+        ):
+            raise ValueError("registered training topology seeds must be in 1..60")
         self.training_seed = training_seed
         self.episode_rng = np.random.default_rng(training_seed)
         self.audit_path = Path(audit_path)
@@ -193,6 +198,13 @@ def train_registered_seed42(protocol, *, root=ROOT):
         }
     finally:
         env.close()
+    manifest["validation"] = validate_registered_checkpoint(
+        model,
+        protocol,
+        training_seed=42,
+        checkpoint=output / "model.zip",
+        output=output / "validation",
+    )
     with (output / "training_episodes.csv").open() as handle:
         episodes = list(csv.DictReader(handle))
     with (output / "progress.csv").open() as handle:

@@ -25,10 +25,10 @@ from rlredteam.enterprise.onprem_protocol import (
 from rlredteam.enterprise.registered_onprem import AuditedTrainingEnv, convergence_diagnostics
 
 
-def test_draft_is_not_registration_and_budget_is_exact():
+def test_protocol_registration_consistency_and_budget_is_exact():
     protocol = load_protocol(ROOT / CONFIG)
     validate_design(protocol)
-    assert protocol["status"] == "draft" and not protocol["registered"]
+    assert protocol["registered"] is (protocol["status"] == "registered")
     assert protocol["total_timesteps"] // (256 * protocol["n_envs"]) == 3907
     assert protocol["total_timesteps"] % (256 * protocol["n_envs"]) == 0
     assert protocol["historical_pilot"].endswith("onprem_generalisation.yaml")
@@ -270,6 +270,15 @@ def test_registered_runner_wiring_with_fake_learner_only(monkeypatch, tmp_path):
         "provenance": {"source_hashes": {}, "dependency_definition_sha256": "test-deps"},
     }
     monkeypatch.setattr(runner, "verify_protocol", lambda *a: report)
+    validation_calls = []
+
+    def validation(model, protocol, **kwargs):
+        assert kwargs["checkpoint"].is_file()
+        assert protocol["splits"]["validation"] == list(range(1001, 1021))
+        validation_calls.append(kwargs)
+        return {"phase": "validation", "final_test_evaluated": False}
+
+    monkeypatch.setattr(runner, "validate_registered_checkpoint", validation)
     monkeypatch.setenv("RLREDTEAM_IMAGE_DIGEST", protocol["container_image_id"])
 
     class FakeLearner:
@@ -299,4 +308,6 @@ def test_registered_runner_wiring_with_fake_learner_only(monkeypatch, tmp_path):
     assert result["final_test_evaluated"] is False
     assert result["completed_episodes"] == 1
     assert result["checkpoint_sha256"]
+    assert len(validation_calls) == 1
+    assert result["validation"]["phase"] == "validation"
     assert not (tmp_path / "runs/onprem-generalisation-registered/seed-43").exists()

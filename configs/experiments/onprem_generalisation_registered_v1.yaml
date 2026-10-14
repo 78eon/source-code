@@ -1,8 +1,8 @@
 protocol_id: onprem-generalisation-registered-v1
 protocol_version: 1
-status: draft
-registered: false
-registration_timestamp: null
+status: registered
+registered: true
+registration_timestamp: 2026-10-14T16:07:03.381782+00:00
 source_commit: e4f39c08d350bf33d6b187068366aca539884786
 source_hashes:
   src/rlredteam/enterprise/onprem.py: 9ba625cd1ffe6ab8a3789e357d0aee2b38339ac8f6ad12b0cc4908306c60890d
@@ -51,7 +51,7 @@ source_provenance:
     stable-baselines3: 2.9.0
     sb3-contrib: 2.9.0
     PyYAML: 6.0.2
-protocol_sha256: 48d12f27aaa0f57e3d1482b041927afd082a7de88a530a01fca6982cb8cc1cd9
+protocol_sha256: f78fa879b20d4552893177a55f7750db09dc32a7b5678f3a6d9808422a4d96ac
 implementation_readiness_policy: derived from executed verifier contract checks; no manual readiness flag
 protected_research_baseline:
   historical_aggregate_sha256: 511dd93907706767e02b191d01b88f63ca59a7ad352c714dd603a4b2e647bc8d

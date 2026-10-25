@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from gui.data.confirmatory import (
+from rlredteam.application.data.confirmatory import (
     AUDIT,
     CONFIG,
     METRICS,
@@ -17,7 +17,7 @@ from gui.data.confirmatory import (
     load_confirmatory,
     load_defect_audit,
 )
-from gui.data.models import ConfirmatoryComparisonRow, ConfirmatoryStudySummary
+from rlredteam.application.data.models import ConfirmatoryComparisonRow, ConfirmatoryStudySummary
 
 
 def put(path, value):
@@ -229,77 +229,3 @@ def test_escaping_source_is_rejected(evidence, tmp_path):
     source.unlink()
     source.symlink_to(root.parent / "outside.json")
     assert "unavailable" in load_confirmatory(root).status_message
-
-
-@pytest.fixture
-def app():
-    pytest.importorskip("PySide6")
-    from PySide6.QtWidgets import QApplication
-
-    return QApplication.instance() or QApplication([])
-
-
-def test_page_missing_and_completed_comparison_and_stale_reset(app, evidence):
-    from gui.views.confirmatory import ConfirmatoryPage
-
-    root, _, _ = evidence
-    page = ConfirmatoryPage()
-    page.apply_confirmatory(load_confirmatory(root))
-    assert page.comparison_note.text() == "Confirmatory comparison not yet available."
-    assert page.progress.value() == 0
-    comparison_fixture(evidence)
-    data = load_confirmatory(root)
-    extra = ConfirmatoryComparisonRow("shaped", "discovered_hosts", 99, 999, 900)
-    page.apply_confirmatory(replace(data, comparisons=data.comparisons + (extra,)))
-    assert page.comparison.rowCount() == 10
-    assert {page.comparison.item(i, 1).text() for i in range(10)} == METRICS
-    assert page.comparison.item(0, 2).text() != page.comparison.item(0, 3).text()
-    page.apply_confirmatory(ConfirmatoryStudySummary())
-    assert page.comparison.rowCount() == 0 and page.audit.rowCount() == 0
-    page.close()
-
-
-def test_console_file_evidence_survives_database_failure(app, evidence, monkeypatch):
-    from gui.backend import ApplicationBackend
-    from gui.data.baseline import BaselineData
-    from gui.views import research_console as console
-    from tests.test_gui_console import FakeBackend
-
-    root, _, _ = evidence
-    monkeypatch.setattr("gui.backend.REPO_ROOT", root)
-    assert ApplicationBackend(repository=object()).load_confirmatory().stage == "Prepared"
-
-    def synchronous(fn, success, failure):
-        try:
-            result = fn()
-        except Exception as exc:
-            failure(str(exc), "test")
-        else:
-            success(result)
-
-    class Offline(FakeBackend):
-        def load_confirmatory(self):
-            return load_confirmatory(root)
-
-        def load_dashboard(self):
-            raise ConnectionError("PostgreSQL offline")
-
-    monkeypatch.setattr(console, "run_async", synchronous)
-    window = console.MainWindow(Offline())
-    assert window.pages[9].data.stage == "Prepared"
-    assert window.pages[8].data.summary == {}
-    assert "PostgreSQL offline" in window.statusBar().currentMessage()
-    baseline = BaselineData(
-        state="REVIEWED",
-        summary={"shaped": {"native_return": 111.49}, "sparse": {"native_return": -9.36}},
-    )
-    window.apply_baseline(baseline)
-    before = [window.pages[8].outcomes.item(i, 2).text()
-              for i in range(window.pages[8].outcomes.rowCount())]
-    comparison_fixture(evidence)
-    window.pages[9].apply_confirmatory(load_confirmatory(root))
-    assert window.pages[9].comparison.rowCount() == 10
-    assert window.pages[8].data is baseline
-    assert before == [window.pages[8].outcomes.item(i, 2).text()
-                      for i in range(window.pages[8].outcomes.rowCount())]
-    window.close()

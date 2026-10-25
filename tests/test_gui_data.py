@@ -1,6 +1,6 @@
 """GUI data layer — headless.
 
-No QApplication and no Qt import: gui.data deliberately depends on neither, so
+No QApplication and no Qt import: rlredteam.application.data deliberately depends on neither, so
 the risky part (SQL, comparability logic, snapshot parsing) is testable without
 a display.
 """
@@ -12,7 +12,7 @@ from datetime import datetime
 
 import pytest
 
-from gui.data.models import Comparison, RunSummary, StepRow, TopologyView
+from rlredteam.application.data.models import Comparison, RunSummary, StepRow, TopologyView
 
 
 def make_run(**overrides) -> RunSummary:
@@ -147,7 +147,7 @@ def test_load_topology_prefers_host_list_over_subnet_sizes(tmp_path, monkeypatch
     Deriving addresses from subnet sizes without accounting for that shifts
     every host into the wrong subnet.
     """
-    from gui.data import runs as runs_folder
+    from rlredteam.application.data import runs as runs_folder
 
     run = tmp_path / "shaped-s44-t44"
     run.mkdir()
@@ -177,46 +177,10 @@ def test_load_topology_prefers_host_list_over_subnet_sizes(tmp_path, monkeypatch
 
 
 def test_missing_snapshot_returns_empty_topology(tmp_path, monkeypatch) -> None:
-    from gui.data import runs as runs_folder
+    from rlredteam.application.data import runs as runs_folder
 
     monkeypatch.setattr(runs_folder, "RUNS_DIR", tmp_path)
     assert runs_folder.load_topology("does-not-exist").num_hosts == 0
-
-
-# -- formatting -------------------------------------------------------------
-
-
-def test_numbers_use_a_real_minus_sign() -> None:
-    """So −1,041 and −747 align on the decimal in a tabular column."""
-    from gui import theme
-
-    assert theme.fmt_num(-1041) == "−1,041"
-    assert "-" not in theme.fmt_num(-747)
-
-
-def test_missing_number_renders_as_dash_not_zero() -> None:
-    """'nothing exploited' and 'mean CVSS of zero' are different facts."""
-    from gui import theme
-
-    assert theme.fmt_num(None) == "—"
-    assert theme.fmt_num(0) == "0"
-
-
-def test_hash_truncation_keeps_both_ends() -> None:
-    from gui import theme
-
-    assert theme.truncate_hash("2aa12404d40a23d0") == "2aa1…d0"
-    assert theme.truncate_hash("") == "—"
-    assert theme.truncate_hash("abc") == "abc"
-
-
-def test_stylesheet_has_no_unsubstituted_tokens() -> None:
-    """A stray @TOKEN@ silently voids the whole QSS rule it sits in."""
-    from gui import theme
-
-    qss = theme.build_stylesheet()
-    assert "@" not in qss, "unsubstituted token left in the stylesheet"
-    assert theme.ARM_1 in qss
 
 
 # -- Train view: the displayed command must not leak secrets ----------------
@@ -227,7 +191,7 @@ def test_command_preview_redacts_the_database_password() -> None:
     import os
 
     os.environ["POSTGRES_PASSWORD"] = "hunter2-should-not-appear"
-    from gui.workers.trainer import TrainRequest
+    from rlredteam.application.train_request import TrainRequest
 
     request = TrainRequest(seed=42, topology_seed=42, timesteps=1000)
     assert "hunter2-should-not-appear" not in request.command_line
@@ -239,7 +203,7 @@ def test_command_preview_redacts_the_database_password() -> None:
 def test_training_never_launches_on_host_networking() -> None:
     """CP-03. Host networking reaches the database but also the internet, and
     the pre-run gate refuses to train with an open network."""
-    from gui.workers.trainer import TrainRequest
+    from rlredteam.application.train_request import TrainRequest
 
     argv = TrainRequest().argv()
     network = argv[argv.index("--network") + 1]
@@ -251,7 +215,7 @@ def test_training_never_launches_on_host_networking() -> None:
 
 
 def test_study_loader_uses_complete_metadata_and_primary_statistics(tmp_path) -> None:
-    from gui.data.studies import load_studies
+    from rlredteam.application.data.studies import load_studies
 
     result = tmp_path / "advanced-rl-multiagent-defense-v1" / "test"
     (result / "metadata").mkdir(parents=True)
@@ -307,7 +271,7 @@ def test_study_loader_uses_complete_metadata_and_primary_statistics(tmp_path) ->
 
 
 def test_study_loader_does_not_treat_missing_analysis_as_complete(tmp_path) -> None:
-    from gui.data.studies import load_studies
+    from rlredteam.application.data.studies import load_studies
 
     result = tmp_path / "advanced-rl-multiagent-defense-v1" / "test" / "metadata"
     result.mkdir(parents=True)
@@ -321,7 +285,7 @@ def test_study_loader_does_not_treat_missing_analysis_as_complete(tmp_path) -> N
 
 
 def test_study_loader_requires_raw_evaluation_evidence(tmp_path) -> None:
-    from gui.data.studies import load_studies
+    from rlredteam.application.data.studies import load_studies
 
     result = tmp_path / "advanced-rl-multiagent-defense-v1" / "test"
     (result / "metadata").mkdir(parents=True)
@@ -355,7 +319,7 @@ def test_study_loader_requires_raw_evaluation_evidence(tmp_path) -> None:
 
 
 def test_study_loader_counts_fixed_baseline_evaluation_csv(tmp_path) -> None:
-    from gui.data.studies import _episode_count
+    from rlredteam.application.data.studies import _episode_count
 
     raw = tmp_path / "raw" / "sparse-s42"
     raw.mkdir(parents=True)

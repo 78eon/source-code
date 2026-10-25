@@ -10,7 +10,7 @@ import pytest
 
 psycopg = pytest.importorskip("psycopg")
 
-from gui.data.repository import Repository  # noqa: E402
+from rlredteam.application.data.repository import Repository  # noqa: E402
 from rlredteam.attack_path_report import build_report  # noqa: E402
 from rlredteam.storage.mitigation_store import MitigationStore  # noqa: E402
 from rlredteam.storage.postgres_logger import (  # noqa: E402

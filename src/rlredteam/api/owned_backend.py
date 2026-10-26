@@ -18,6 +18,10 @@ import uvicorn
 
 
 def main():
+    if os.environ.get("SECURITY_RL_USE_LOCAL_CONFIG") == "1":
+        from .local_config import activate
+
+        activate()
     runtime = Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp")) / f"security-rl-{os.getuid()}"
     runtime.mkdir(mode=0o700, exist_ok=True)
     info = runtime.lstat()
@@ -27,7 +31,12 @@ def main():
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
-        print("A desktop backend is already owned by another application instance", file=sys.stderr)
+        print(
+            json.dumps(
+                {"error": "Another desktop instance already owns the backend. Close it first."}
+            ),
+            flush=True,
+        )
         os.close(lock)
         return 2
     token = secrets.token_urlsafe(48)
@@ -71,5 +80,36 @@ def main():
     return 0
 
 
+def entry():
+    from .local_config import ConfigurationError, command
+
+    try:
+        if len(sys.argv) == 3 and sys.argv[1] == "--config":
+            payload = None
+            if sys.argv[2] == "save":
+                content = sys.stdin.buffer.read(32769)
+                if len(content) > 32768:
+                    raise ConfigurationError("Settings request exceeds the size limit")
+                payload = json.loads(content)
+            print(json.dumps(command(sys.argv[2], payload)), flush=True)
+            return 0
+        return main()
+    except ConfigurationError as error:
+        print(json.dumps({"error": str(error)}), flush=True)
+        return 3
+    except Exception:
+        # No raw library exception, connection string, path or credential is logged.
+        print(
+            json.dumps(
+                {
+                    "error": "Backend initialization failed. Check runtime integrity, "
+                    "file permissions and local settings."
+                }
+            ),
+            flush=True,
+        )
+        return 4
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(entry())

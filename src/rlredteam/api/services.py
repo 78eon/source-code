@@ -52,6 +52,7 @@ class ReadOnlyRepository(Repository):
             password=self.settings.password,
             dbname=self.settings.dbname,
             connect_timeout=4,
+            sslmode=os.environ.get("POSTGRES_SSLMODE", "prefer"),
             options="-c default_transaction_read_only=on -c statement_timeout=5000",
         )
 

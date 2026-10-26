@@ -235,6 +235,24 @@ tbody tr:hover {
   padding: 30px;
   text-align: center;
 }
+.setup {
+  max-width: 900px;
+  margin: 24px auto;
+  padding: 24px;
+}
+.setup label {
+  display: block;
+  margin: 12px 0;
+}
+.setup input:not([type="checkbox"]),
+.setup select {
+  display: block;
+  width: 100%;
+}
+.setup fieldset {
+  margin: 20px 0;
+  border: 1px solid #2d3b4c;
+}
 @media (max-width: 1100px) {
   .graph-workspace {
     grid-template-columns: 160px 1fr;

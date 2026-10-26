@@ -1,0 +1,4 @@
+FROM docker.io/library/debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends libwebkit2gtk-4.1-0 libgtk-3-0 libayatana-appindicator3-1 ca-certificates xvfb xauth dbus-x11 fonts-dejavu fluxbox wmctrl xdotool curl jq procps gnome-keyring && rm -rf /var/lib/apt/lists/*
+RUN useradd --create-home --uid 1000 analyst
+ENV HOME=/home/analyst

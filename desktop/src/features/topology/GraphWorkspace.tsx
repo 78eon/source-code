@@ -5,6 +5,7 @@ import { buildGraph } from "../../graph/model";
 import { Details } from "../../components/Details";
 export function GraphWorkspace({ data }: { data: GraphDTO }) {
   const container = useRef<HTMLDivElement>(null);
+  const camera = useRef<Sigma | null>(null);
   const [search, setSearch] = useState(""),
     [nodeType, setNodeType] = useState(""),
     [edgeType, setEdgeType] = useState("");
@@ -26,6 +27,7 @@ export function GraphWorkspace({ data }: { data: GraphDTO }) {
           defaultEdgeType: "arrow",
         },
       );
+      camera.current = renderer;
       renderer.on("clickNode", ({ node }) =>
         setSelected(data.nodes.find((n) => n.id === node)),
       );
@@ -36,7 +38,10 @@ export function GraphWorkspace({ data }: { data: GraphDTO }) {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Graph rendering unavailable");
     }
-    return () => renderer?.kill();
+    return () => {
+      camera.current = null;
+      renderer?.kill();
+    };
   }, [data, search, nodeType, edgeType]);
   return (
     <div className="graph-workspace">
@@ -78,6 +83,17 @@ export function GraphWorkspace({ data }: { data: GraphDTO }) {
         <p>Unknown and inferred facts are not confirmed facts.</p>
       </aside>
       <section className="canvas-wrap">
+        <div className="graph-controls">
+          <button onClick={() => camera.current?.getCamera().animatedZoom()}>
+            Zoom in
+          </button>
+          <button onClick={() => camera.current?.getCamera().animatedUnzoom()}>
+            Zoom out
+          </button>
+          <button onClick={() => camera.current?.getCamera().animatedReset()}>
+            Fit / reset
+          </button>
+        </div>
         {error && <p role="alert">{error}</p>}
         {!data.nodes.length && <p className="empty">No data available</p>}
         <div className="canvas" ref={container} />

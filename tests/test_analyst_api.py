@@ -17,8 +17,17 @@ class Service:
     def reports(self):
         return []
 
-    def graph(self, graph_id):
+    def graph(self, *args):
         return {"source": "neo4j", "nodes": [], "edges": []}
+
+    def twin_summary(self):
+        return {"status": "UNAVAILABLE", "detail": "No persisted Digital Twin available"}
+
+    def twin_entities(self):
+        return []
+
+    def simulations(self):
+        return {"status": "UNAVAILABLE", "items": []}
 
 
 @pytest.fixture
@@ -66,4 +75,13 @@ def test_failure_is_not_empty_data(client):
 
 def test_unknown_preserved(client):
     assert client.get("/api/findings").json()[0]["applicability"] == "UNKNOWN"
-    assert client.get("/api/digital-twin/summary").json()["observed"] is None
+    assert client.get("/api/digital-twin/summary").json()["status"] == "UNAVAILABLE"
+
+
+@pytest.mark.parametrize("query", ["cypher=MATCH(n)", "query=DELETE", "limit=2001", "limit=0"])
+def test_graph_query_contract(client, query):
+    assert client.get("/api/graph/topology?" + query).status_code == 422
+
+
+def test_host_boundary(client):
+    assert client.get("/api/health", headers={"host": "external.example"}).status_code == 400

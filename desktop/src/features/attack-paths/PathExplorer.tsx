@@ -52,6 +52,12 @@ export function PathExplorer({ paths }: { paths: Fact[] }) {
                 {String(edge.access_after ?? "Unknown")}
               </p>
               <p>
+                Step: {String(edge.step ?? "Unknown")} · Service:{" "}
+                {String(edge.service ?? "Unknown")} /{" "}
+                {String(edge.port ?? "Unknown")} /{" "}
+                {String(edge.protocol ?? "Unknown")}
+              </p>
+              <p>
                 CVE: {String(edge.cve_id ?? "Unknown")} · Evidence:{" "}
                 {JSON.stringify(edge.evidence_ids ?? [])}
               </p>

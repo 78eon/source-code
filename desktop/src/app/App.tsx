@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
-import { get } from "../api/client";
+import { configureOrigin, get } from "../api/client";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { pages, type Page, type Fact, type GraphDTO } from "../types";
 import { RecordBrowser } from "../components/RecordBrowser";
 import { GraphWorkspace } from "../features/topology/GraphWorkspace";
 import { PathExplorer } from "../features/attack-paths/PathExplorer";
+import { TwinView, SimulationView } from "../features/RecordedViews";
 const endpoints: Record<Page, string> = {
   Dashboard: "assets",
   Assets: "assets",
@@ -15,17 +17,45 @@ const endpoints: Record<Page, string> = {
   Reports: "reports",
 };
 export function App() {
+  const native = isTauri();
+  const [backendReady, setBackendReady] = useState(!native);
+  const [startupError, setStartupError] = useState("");
   const [page, setPage] = useState<Page>("Dashboard"),
     [token, setToken] = useState(""),
     [entry, setEntry] = useState(""),
     [reload, setReload] = useState(0);
   const [data, setData] = useState<unknown>(null),
+    [entities, setEntities] = useState<Fact[]>([]),
     [health, setHealth] = useState("OFFLINE"),
     [error, setError] = useState(""),
     [loading, setLoading] = useState(false);
   useEffect(() => {
+    if (!native) return;
+    let active = true;
+    invoke<{ origin: string; token: string }>("backend_session")
+      .then((session) => {
+        if (!active) return;
+        configureOrigin(session.origin);
+        setToken(session.token);
+        setBackendReady(true);
+      })
+      .catch((reason: unknown) => {
+        if (active)
+          setStartupError(
+            typeof reason === "string"
+              ? reason
+              : "Local backend could not start. Check the configured container Python runtime and whether another desktop instance is open.",
+          );
+      });
+    return () => {
+      active = false;
+    };
+  }, [native]);
+  useEffect(() => {
+    if (!backendReady) return;
     const abort = new AbortController();
     setData(null);
+    setEntities([]);
     setError("");
     setLoading(true);
     (async () => {
@@ -44,8 +74,13 @@ export function App() {
       }
       try {
         const result = await get<unknown>(endpoints[page], token, abort.signal);
+        const twinEntities =
+          page === "Digital Twin"
+            ? await get<Fact[]>("digital-twin/entities", token, abort.signal)
+            : [];
         if (!abort.signal.aborted) {
           setData(result);
+          setEntities(twinEntities);
           setHealth(
             result &&
               typeof result === "object" &&
@@ -65,7 +100,7 @@ export function App() {
       }
     })();
     return () => abort.abort();
-  }, [page, token, reload]);
+  }, [page, token, reload, backendReady]);
   const rows = Array.isArray(data) ? (data as Fact[]) : [];
   return (
     <div className="shell">
@@ -78,7 +113,14 @@ export function App() {
           <button
             key={p}
             aria-current={page === p ? "page" : undefined}
-            onClick={() => setPage(p)}
+            onClick={() => {
+              if (p !== page) {
+                setData(null);
+                setError("");
+                setLoading(true);
+                setPage(p);
+              }
+            }}
           >
             {p}
           </button>
@@ -98,30 +140,36 @@ export function App() {
           <span className={"status " + health.toLowerCase()}>{health}</span>
           <button onClick={() => setReload((r) => r + 1)}>Refresh</button>
         </header>
-        <form
-          className="connection"
-          onSubmit={(e) => {
-            e.preventDefault();
-            setToken(entry);
-            setEntry("");
-          }}
-        >
-          <label>
-            Local API token
-            <input
-              type="password"
-              autoComplete="off"
-              value={entry}
-              onChange={(e) => setEntry(e.target.value)}
-              placeholder="Session only — not stored"
-            />
-          </label>
-          <button>Connect</button>
-          <small>
-            PostgreSQL evidence · Neo4j graph analysis · localhost API
-          </small>
-        </form>
-        {loading ? (
+        {!native && (
+          <form
+            className="connection"
+            onSubmit={(e) => {
+              e.preventDefault();
+              setToken(entry);
+              setEntry("");
+            }}
+          >
+            <label>
+              Local API token
+              <input
+                type="password"
+                autoComplete="off"
+                value={entry}
+                onChange={(e) => setEntry(e.target.value)}
+                placeholder="Session only — not stored"
+              />
+            </label>
+            <button>Connect</button>
+            <small>
+              PostgreSQL evidence · Neo4j graph analysis · localhost API
+            </small>
+          </form>
+        )}
+        {startupError ? (
+          <p role="alert">{startupError}</p>
+        ) : !backendReady ? (
+          <p className="empty">Starting local backend…</p>
+        ) : loading ? (
           <p className="empty">Loading recorded evidence…</p>
         ) : error ? (
           <section className="notice" role="alert">
@@ -160,20 +208,15 @@ export function App() {
               <h2>Analyst overview</h2>
               <p>
                 Explore recorded assets, findings and attack paths. Unknown risk
-                and applicability remain unknown. Recent simulation summaries
-                are not yet connected.
+                and applicability remain unknown. Simulation replay shows stored
+                report facts.
               </p>
             </section>
           </>
-        ) : page === "Digital Twin" || page === "Simulation" ? (
-          <section className="notice">
-            <h2>{page} integration</h2>
-            <p>{String((data as Fact)?.detail ?? "No data available")}</p>
-            <p>
-              OBSERVED · INFERRED · CONFIRMED · CONFLICTING · UNKNOWN remain
-              distinct. No inference is promoted to confirmation.
-            </p>
-          </section>
+        ) : page === "Digital Twin" && data ? (
+          <TwinView summary={data as Fact} entities={entities} />
+        ) : page === "Simulation" && data ? (
+          <SimulationView data={data as Fact} />
         ) : page === "Attack Paths" ? (
           <PathExplorer paths={rows} />
         ) : (
@@ -191,7 +234,7 @@ export function App() {
                       "applicability",
                       "evidence_refs",
                     ]
-                  : ["report_id", "schema_version"]
+                  : ["report_id", "report_mode", "methodology"]
             }
           />
         )}

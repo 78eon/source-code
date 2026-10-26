@@ -3,7 +3,7 @@
 import os
 import secrets
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
@@ -54,6 +54,7 @@ def create_app(service=None):
             "status": "DEGRADED",
             "service": "analyst-api",
             "read_only": True,
+            "instance": os.environ.get("SECURITY_RL_BACKEND_INSTANCE"),
             "detail": "API running; data-source availability is checked per request",
         }
 
@@ -72,8 +73,23 @@ def create_app(service=None):
         return invoke(service.findings)
 
     @app.get("/api/graph/topology", dependencies=auth)
-    def graph(graph_id: str | None = None):
-        return invoke(service.graph, graph_id)
+    def graph(
+        request: Request,
+        graph_id: str | None = Query(None, max_length=256),
+        node_type: str | None = Query(None, max_length=100),
+        relationship_type: str | None = Query(None, max_length=100),
+        search: str | None = Query(None, max_length=200),
+        limit: int = Query(2000, ge=1, le=2000),
+    ):
+        if set(request.query_params) - {
+            "graph_id",
+            "node_type",
+            "relationship_type",
+            "search",
+            "limit",
+        }:
+            raise HTTPException(422, "Unsupported graph parameter")
+        return invoke(service.graph, graph_id, node_type, relationship_type, search, limit)
 
     @app.get("/api/attack-paths", dependencies=auth)
     def paths():
@@ -89,23 +105,23 @@ def create_app(service=None):
 
     @app.get("/api/digital-twin/summary", dependencies=auth)
     def twin():
-        return {
-            "status": "UNAVAILABLE",
-            "detail": "Persistent Digital Twin reader not connected",
-            "observed": None,
-            "inferred": None,
-            "confirmed": None,
-            "conflicting": None,
-            "unknown": None,
-        }
+        return invoke(service.twin_summary)
+
+    @app.get("/api/digital-twin/entities", dependencies=auth)
+    def twin_entities():
+        return invoke(service.twin_entities)
+
+    @app.get("/api/digital-twin/entities/{entity_id:path}", dependencies=auth)
+    def twin_entity(entity_id: str):
+        return detail(invoke(service.twin_entities), "id", entity_id)
 
     @app.get("/api/simulations", dependencies=auth)
     def simulations():
-        return {
-            "status": "UNAVAILABLE",
-            "detail": "Analyst simulation reader not connected",
-            "items": [],
-        }
+        return invoke(service.simulations)
+
+    @app.get("/api/simulations/{simulation_id:path}", dependencies=auth)
+    def simulation(simulation_id: str):
+        return detail(invoke(service.simulations)["items"], "id", simulation_id)
 
     return app
 

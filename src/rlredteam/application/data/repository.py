@@ -109,10 +109,15 @@ class Repository:
             rows = conn.execute(sql).fetchall()
         return [
             RunSummary(
-                experiment_id=r[0], name=r[1], reward_mode=r[2],
-                seeds=list(r[3] or []), created_at=r[4],
-                topology_config_hash=r[5] or "", cve_manifest_sha256=r[6] or "",
-                config_hash=r[7] or "", git_sha=r[8],
+                experiment_id=r[0],
+                name=r[1],
+                reward_mode=r[2],
+                seeds=list(r[3] or []),
+                created_at=r[4],
+                topology_config_hash=r[5] or "",
+                cve_manifest_sha256=r[6] or "",
+                config_hash=r[7] or "",
+                git_sha=r[8],
                 episode_count=r[9],
                 mean_native_reward=float(r[10]) if r[10] is not None else None,
                 success_rate=float(r[11]) if r[11] is not None else None,
@@ -142,10 +147,17 @@ class Repository:
             rows = conn.execute(sql, (experiment_ids,)).fetchall()
         return [
             EpisodeRow(
-                experiment_id=r[0], run_name=r[1], reward_mode=r[2], seed=r[3],
-                topology_seed=r[4], episode_idx=r[5],
-                total_reward=float(r[6]), native_reward=float(r[7]),
-                length=r[8], terminal_state=r[9], goal_reached=r[10],
+                experiment_id=r[0],
+                run_name=r[1],
+                reward_mode=r[2],
+                seed=r[3],
+                topology_seed=r[4],
+                episode_idx=r[5],
+                total_reward=float(r[6]),
+                native_reward=float(r[7]),
+                length=r[8],
+                terminal_state=r[9],
+                goal_reached=r[10],
                 exploited_hosts=r[11] or [],
                 mean_cvss_exploited=float(r[12]) if r[12] is not None else None,
                 episode_id=r[13],
@@ -171,10 +183,17 @@ class Repository:
             rows = conn.execute(sql, (experiment_id,)).fetchall()
         return [
             EpisodeRow(
-                experiment_id=r[0], run_name=r[1], reward_mode=r[2], seed=r[3],
-                topology_seed=r[4], episode_idx=r[5],
-                total_reward=float(r[6]), native_reward=float(r[7]),
-                length=r[8], terminal_state=r[9], goal_reached=r[10],
+                experiment_id=r[0],
+                run_name=r[1],
+                reward_mode=r[2],
+                seed=r[3],
+                topology_seed=r[4],
+                episode_idx=r[5],
+                total_reward=float(r[6]),
+                native_reward=float(r[7]),
+                length=r[8],
+                terminal_state=r[9],
+                goal_reached=r[10],
                 exploited_hosts=r[11] or [],
                 mean_cvss_exploited=float(r[12]) if r[12] is not None else None,
                 episode_id=r[13],
@@ -229,16 +248,21 @@ class Repository:
 
     # -- derived attack-path reports -------------------------------------
 
-    def attack_path_reports(self, limit: int = 50) -> list[dict]:
+    def attack_path_reports(self, limit: int = 50, report_ids=None) -> list[dict]:
         """Return stored Phase 14 payloads; never derive facts in the GUI."""
         if not 1 <= int(limit) <= 500:
             raise ValueError("report limit must be between 1 and 500")
         with self._connect() as conn:
-            exists = conn.execute(
-                "SELECT to_regclass('public.attack_path_reports')"
-            ).fetchone()[0]
+            exists = conn.execute("SELECT to_regclass('public.attack_path_reports')").fetchone()[0]
             if exists is None:
                 return []
+            if report_ids is not None:
+                rows = conn.execute(
+                    "SELECT report_data FROM attack_path_reports WHERE report_id = ANY(%s) "
+                    "ORDER BY created_at DESC, report_id LIMIT %s",
+                    (sorted(report_ids), int(limit)),
+                ).fetchall()
+                return [dict(row[0]) for row in rows]
             rows = conn.execute(
                 """
                 SELECT report_data FROM attack_path_reports
@@ -267,16 +291,22 @@ class Repository:
             ).fetchall()
         return [dict(row[0]) for row in rows]
 
-    def causal_attack_graphs(self, limit: int = 50) -> list[dict]:
+    def causal_attack_graphs(self, limit: int = 50, report_ids=None) -> list[dict]:
         """Load normalized Phase 19 graphs from PostgreSQL authority."""
         if not 1 <= int(limit) <= 500:
             raise ValueError("graph limit must be between 1 and 500")
         with self._connect() as conn:
-            exists = conn.execute(
-                "SELECT to_regclass('public.causal_attack_graphs')"
-            ).fetchone()[0]
+            exists = conn.execute("SELECT to_regclass('public.causal_attack_graphs')").fetchone()[0]
             if exists is None:
                 return []
             from rlredteam.storage.causal_store import CausalGraphStore
 
+            if report_ids is not None:
+                ids = conn.execute(
+                    "SELECT graph_id FROM causal_attack_graphs WHERE report_id = ANY(%s) "
+                    "ORDER BY graph_id LIMIT %s",
+                    (sorted(report_ids), int(limit)),
+                ).fetchall()
+                store = CausalGraphStore(conn)
+                return [store.load(row[0]).to_dict() for row in ids]
             return CausalGraphStore(conn).list(limit)

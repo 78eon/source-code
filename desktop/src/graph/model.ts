@@ -10,19 +10,27 @@ export function buildGraph(
   const count = dto.nodes.length;
   dto.nodes.forEach((n, i) => {
     if (nodeType && n.type !== nodeType) return;
-    if (search && !n.label.toLowerCase().includes(search.toLowerCase())) return;
+    const match =
+      !!search && n.label.toLowerCase().includes(search.toLowerCase());
     const angle = (2 * Math.PI * i) / Math.max(count, 1);
     graph.addNode(n.id, {
       x: Math.cos(angle),
       y: Math.sin(angle),
-      size: 9,
+      size: match ? 14 : 9,
+      highlighted: match,
       label: n.label,
-      color:
-        n.status === "CONFIRMED"
-          ? "#72b7a1"
-          : n.status === "INFERRED"
-            ? "#d9ad68"
-            : "#7f9fbe",
+      color: match
+        ? "#ffffff"
+        : ((
+            {
+              CONFIRMED: "#72b7a1",
+              INFERRED: "#d9ad68",
+              OBSERVED: "#72b9e7",
+              CONFLICTING: "#e78090",
+              UNKNOWN: "#7f9fbe",
+              SYNTHETIC: "#b795df",
+            } as Record<string, string>
+          )[n.status.toUpperCase()] ?? "#7f9fbe"),
       fact: n,
     });
   });

@@ -26,3 +26,4 @@ class GraphDTO(BaseModel):
     graph_id: str | None = None
     nodes: list[GraphNode] = Field(default_factory=list)
     edges: list[GraphEdge] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)

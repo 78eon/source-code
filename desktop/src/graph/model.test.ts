@@ -41,7 +41,13 @@ describe("evidence graph", () => {
     expect(g.getNodeAttribute("b", "fact").status).toBe("INFERRED");
   });
   it("filters without dangling edges", () =>
-    expect(buildGraph(dto, "A").size).toBe(0));
+    expect(buildGraph(dto, "", "Service").size).toBe(0));
+  it("highlights search while retaining causal context", () => {
+    const graph = buildGraph(dto, "A");
+    expect(graph.size).toBe(1);
+    expect(graph.getNodeAttribute("a", "highlighted")).toBe(true);
+    expect(graph.getNodeAttribute("b", "highlighted")).toBe(false);
+  });
   it("rejects unsupported relationships", () =>
     expect(() =>
       buildGraph({ ...dto, edges: [{ ...dto.edges[0], evidence_refs: [] }] }),

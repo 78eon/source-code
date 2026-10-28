@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     io::{BufRead, BufReader, Read, Write},
     net::TcpStream,
-    path::Path,
+    path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::mpsc,
     thread,
@@ -22,14 +22,8 @@ pub struct OwnedBackend {
 }
 
 impl OwnedBackend {
-    pub fn start() -> Result<Self, String> {
-        let python = std::env::var("SECURITY_RL_BACKEND_PYTHON")
-            .map_err(|_| "Set SECURITY_RL_BACKEND_PYTHON to the container Python executable")?;
-        if !Path::new(&python).is_absolute() {
-            return Err("Backend executable must be an absolute path".into());
-        }
-        let child = Command::new(python)
-            .args(["-m", "rlredteam.api.owned_backend"])
+    pub fn start(resources: &Path) -> Result<Self, String> {
+        let child = runtime_command(resources)?
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             // Do not forward library exceptions containing database credentials.
@@ -60,8 +54,12 @@ impl OwnedBackend {
             .recv_timeout(Duration::from_secs(20))
             .map_err(|_| "Backend startup timed out")?
             .map_err(|_| "Backend handshake failed")?;
-        owned.session = serde_json::from_str(&line)
+        let value: serde_json::Value = serde_json::from_str(&line)
             .map_err(|_| "Backend exited before handshake; check runtime dependencies or another desktop instance")?;
+        if let Some(error) = value.get("error").and_then(|v| v.as_str()) {
+            return Err(error.to_string());
+        }
+        owned.session = serde_json::from_value(value).map_err(|_| "Invalid backend handshake")?;
         let port = owned
             .session
             .origin
@@ -91,6 +89,121 @@ impl OwnedBackend {
 
     pub fn alive(&mut self) -> bool {
         matches!(self.child.try_wait(), Ok(None))
+    }
+}
+
+pub fn runtime_command(resources: &Path) -> Result<Command, String> {
+    #[cfg(debug_assertions)]
+    if let Ok(python) = std::env::var("SECURITY_RL_BACKEND_PYTHON") {
+        if !Path::new(&python).is_absolute() {
+            return Err("Python executable must be absolute".into());
+        }
+        let mut command = Command::new(python);
+        command.args(["-m", "rlredteam.api.owned_backend"]);
+        command.env("SECURITY_RL_USE_LOCAL_CONFIG", "1");
+        return Ok(command);
+    }
+    let executable: PathBuf = resources.join("runtime/security-rl-api/security-rl-api");
+    if !executable.is_file() {
+        return Err("Bundled Python API runtime is missing. Reinstall the desktop package.".into());
+    }
+    let mut command = Command::new(executable);
+    command.env_remove("PYTHONPATH").env_remove("PYTHONHOME");
+    Ok(command)
+}
+
+pub fn configuration(
+    resources: &Path,
+    operation: &str,
+    payload: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let mut child = runtime_command(resources)?
+        .args(["--config", operation])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|_| "Cannot start bundled configuration helper")?;
+    if let Some(value) = payload {
+        let bytes = serde_json::to_vec(&value).map_err(|_| "Invalid settings")?;
+        if bytes.len() > 32768 {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("Settings too large".into());
+        }
+        if child.stdin.take().unwrap().write_all(&bytes).is_err() {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("Settings pipe failed".into());
+        }
+    } else {
+        drop(child.stdin.take());
+    }
+    let output = child.stdout.take().unwrap();
+    let (send, receive) = mpsc::channel();
+    thread::spawn(move || {
+        let mut text = String::new();
+        let result = output.take(32769).read_to_string(&mut text);
+        let _ = send.send(result.map(|_| text));
+    });
+    let result = receive.recv_timeout(deadline.saturating_duration_since(Instant::now()));
+    if result.is_err() {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err("Configuration timed out. Check whether the OS keyring is locked.".into());
+    }
+    let exit_result = wait_for_configuration_exit(&mut child, deadline);
+    let text = result
+        .unwrap()
+        .map_err(|_| "Configuration response failed")?;
+    let value: serde_json::Value =
+        serde_json::from_str(&text).map_err(|_| "Invalid configuration response")?;
+    if let Some(error) = value.get("error").and_then(|v| v.as_str()) {
+        return Err(error.to_string());
+    }
+    exit_result?;
+    Ok(value)
+}
+
+fn wait_for_configuration_exit(child: &mut Child, deadline: Instant) -> Result<(), String> {
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) if status.success() => return Ok(()),
+            Ok(Some(_)) => return Err("Configuration helper failed".into()),
+            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(10)),
+            result => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(if result.is_err() {
+                    "Cannot check configuration helper"
+                } else {
+                    "Configuration helper exit timed out"
+                }.into());
+            }
+        }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn configuration_exit_is_bounded_and_reaped() {
+        let mut child = Command::new("sleep").arg("30").spawn().unwrap();
+        let start = Instant::now();
+        assert!(wait_for_configuration_exit(&mut child, start + Duration::from_millis(50)).is_err());
+        assert!(start.elapsed() < Duration::from_secs(2));
+        assert!(child.try_wait().unwrap().is_some());
+    }
+
+    #[test]
+    fn configuration_exit_requires_success() {
+        for (program, expected) in [("true", true), ("false", false)] {
+            let mut child = Command::new(program).spawn().unwrap();
+            assert_eq!(wait_for_configuration_exit(&mut child, Instant::now() + Duration::from_secs(2)).is_ok(), expected);
+        }
     }
 }
 

@@ -6,6 +6,10 @@ import { RecordBrowser } from "../components/RecordBrowser";
 import { GraphWorkspace } from "../features/topology/GraphWorkspace";
 import { PathExplorer } from "../features/attack-paths/PathExplorer";
 import { TwinView, SimulationView } from "../features/RecordedViews";
+import {
+  ConfigurationView,
+  type LocalSettings,
+} from "../features/ConfigurationView";
 const endpoints: Record<Page, string> = {
   Dashboard: "assets",
   Assets: "assets",
@@ -20,6 +24,9 @@ export function App() {
   const native = isTauri();
   const [backendReady, setBackendReady] = useState(!native);
   const [startupError, setStartupError] = useState("");
+  const [settings, setSettings] = useState<LocalSettings | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [sessionGeneration, setSessionGeneration] = useState(0);
   const [page, setPage] = useState<Page>("Dashboard"),
     [token, setToken] = useState(""),
     [entry, setEntry] = useState(""),
@@ -32,9 +39,21 @@ export function App() {
   useEffect(() => {
     if (!native) return;
     let active = true;
-    invoke<{ origin: string; token: string }>("backend_session")
+    invoke<{ configured: boolean; settings: LocalSettings | null }>(
+      "desktop_configuration",
+      { operation: "get" },
+    )
+      .then(async (configuration) => {
+        if (!active) return null;
+        setSettings(configuration.settings);
+        if (!configuration.configured) {
+          setShowSettings(true);
+          return null;
+        }
+        return invoke<{ origin: string; token: string }>("backend_session");
+      })
       .then((session) => {
-        if (!active) return;
+        if (!active || !session) return;
         configureOrigin(session.origin);
         setToken(session.token);
         setBackendReady(true);
@@ -50,7 +69,7 @@ export function App() {
     return () => {
       active = false;
     };
-  }, [native]);
+  }, [native, sessionGeneration]);
   useEffect(() => {
     if (!backendReady) return;
     const abort = new AbortController();
@@ -102,6 +121,25 @@ export function App() {
     return () => abort.abort();
   }, [page, token, reload, backendReady]);
   const rows = Array.isArray(data) ? (data as Fact[]) : [];
+  if (native && showSettings)
+    return (
+      <ConfigurationView
+        initial={settings}
+        startupError={startupError}
+        onCancel={() => {
+          setShowSettings(false);
+          setBackendReady(false);
+          setSessionGeneration((n) => n + 1);
+        }}
+        onSaved={() => {
+          setData(null);
+          setBackendReady(false);
+          setStartupError("");
+          setShowSettings(false);
+          setSessionGeneration((n) => n + 1);
+        }}
+      />
+    );
   return (
     <div className="shell">
       <nav className="sidebar">
@@ -139,7 +177,16 @@ export function App() {
           </div>
           <span className={"status " + health.toLowerCase()}>{health}</span>
           <button onClick={() => setReload((r) => r + 1)}>Refresh</button>
+          {native && (
+            <button onClick={() => setShowSettings(true)}>Settings</button>
+          )}
         </header>
+        {native && settings?.profile === "demo" && (
+          <p className="notice">
+            Demo profile · Only explicitly configured development evidence is
+            displayed.
+          </p>
+        )}
         {!native && (
           <form
             className="connection"

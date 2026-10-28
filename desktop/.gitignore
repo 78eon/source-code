@@ -2,6 +2,8 @@ node_modules/
 test-results/
 playwright-report/
 dist/
+packaging/build/
+src-tauri/runtime/
 src-tauri/target/
 src-tauri/gen/
 src-tauri/icons/*

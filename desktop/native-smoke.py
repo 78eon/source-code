@@ -30,6 +30,25 @@ env = {
     "XDG_CONFIG_HOME": "/tmp/securityrl-config",
     "XDG_DATA_HOME": "/tmp/securityrl-data",
 }
+subprocess.run(
+    [env["SECURITY_RL_BACKEND_PYTHON"], "-m", "rlredteam.api.owned_backend", "--config", "save"],
+    input=json.dumps(
+        {
+            "settings": {
+                "version": 1,
+                "profile": "demo",
+                "postgres": None,
+                "neo4j": None,
+                "report_ids": [],
+                "twin_snapshot": None,
+            }
+        }
+    ),
+    text=True,
+    capture_output=True,
+    env=env,
+    check=True,
+)
 process = subprocess.Popen(
     ["xvfb-run", "-a", "dbus-run-session", "--", "src-tauri/target/debug/security-rl-desktop"],
     env=env,

@@ -24,6 +24,12 @@
     }
   },
   "bundle": {
-    "active": false
+    "active": true,
+    "targets": ["deb"],
+    "category": "DeveloperTool",
+    "shortDescription": "Read-only Security-RL analyst desktop",
+    "longDescription": "Native analyst workspace for explicitly selected recorded evidence. PostgreSQL and Neo4j remain external services. Includes the local Python/FastAPI runtime.",
+    "resources": {"runtime/security-rl-api/": "runtime/security-rl-api/"},
+    "linux": {"deb": {"depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0", "libayatana-appindicator3-1"], "recommends": ["gnome-keyring"]}}
   }
 }

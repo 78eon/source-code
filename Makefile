@@ -280,7 +280,7 @@ desktop-install: desktop-image
 	$(DESKTOP_RUN) npm ci
 
 desktop-check:
-	$(DESKTOP_RUN) sh -c 'npm run typecheck && npm test && npm run build && cd src-tauri && cargo check --locked'
+	$(DESKTOP_RUN) sh -c 'npm run typecheck && npm test && npm run build && cd src-tauri && cargo check --locked && cargo test --locked'
 
 desktop-build:
 	$(DESKTOP_RUN) npm run tauri -- build --debug --no-bundle
@@ -319,6 +319,23 @@ desktop-native-smoke:
 		-v "$(CURDIR)/configs/catalogues:/app/configs/catalogues:ro,z" \
 		-v "$(CURDIR)/desktop:/app/desktop:ro,z" -w /app/desktop \
 		$(DESKTOP_IMAGE) python3 native-smoke.py
+
+.PHONY: desktop-package-image desktop-package desktop-package-test
+desktop-package-image:
+	podman build -t localhost/security-rl-desktop-packager:dev -f desktop/packaging/Containerfile desktop
+
+desktop-package:
+	podman run --rm --network none --cpus 2 --memory 6g \
+		-v "$(CURDIR)/src:/app/src:ro,z" \
+		-v "$(CURDIR)/configs/catalogues:/app/configs/catalogues:ro,z" \
+		-v "$(CURDIR)/desktop:/app/desktop:rw,z" \
+		-v security-rl-desktop-cargo:/usr/local/cargo/registry -w /app/desktop \
+		localhost/security-rl-desktop-packager:dev sh -c \
+		'pyinstaller --noconfirm --distpath src-tauri/runtime --workpath packaging/build packaging/backend.spec && python packaging/verify_bundle.py && npm run tauri -- build --bundles deb'
+
+desktop-package-test:
+	podman build -t localhost/security-rl-desktop-clean-test:dev -f desktop/packaging/Containerfile.clean-test desktop
+	bash desktop/packaging/test-install.sh
 
 cyberbattle-build: ## Build isolated CyberBattleSim image without changing NASim dependencies
 	podman image exists localhost/sourcecode_app:latest || $(COMPOSE) build app

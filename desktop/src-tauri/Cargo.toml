@@ -2,6 +2,7 @@
 name = "security-rl-desktop"
 version = "0.1.0"
 edition = "2021"
+authors = ["Security-RL contributors"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

@@ -1,0 +1,260 @@
+protocol_id: onprem-generalisation-registered-v1
+protocol_version: 1
+status: registered
+registered: true
+registration_timestamp: '2026-10-14T16:07:03.381782+00:00'
+source_commit: e4f39c08d350bf33d6b187068366aca539884786
+source_hashes:
+  src/rlredteam/enterprise/onprem.py: 9ba625cd1ffe6ab8a3789e357d0aee2b38339ac8f6ad12b0cc4908306c60890d
+  src/rlredteam/enterprise/environment.py: a7dfcefea42f05824c1e44b8377dae9a4ea2a0c7f68d46a266a7f38b55fca123
+  src/rlredteam/enterprise/model.py: c3a728c4698ab6c9ed907d1424459727692e786558cc0472c64a979f5a30b05a
+  src/rlredteam/enterprise/state.py: e8e284af5a58fb3dd1dd25c00f143ee492acd8b7e325b3ef27e3834060fbc0c3
+  src/rlredteam/enterprise/generalisation.py: 21ed84f3b5df942959b28b7dd24ef3efd1ae2a702df13a266959210b539ebb10
+  src/rlredteam/enterprise/onprem_protocol.py: c3ef3b08f730f271305c332039bacd611000c1b17cc25fbe7c3277366d8ae5e0
+  src/rlredteam/catalogues.py: cf5eeda1d4d5a5ee2ba47af160586f817f5cc7681cb012d8e9959231b3c29e40
+  src/rlredteam/train.py: 7f2de398c7da4390de0a756eded8892e0155e9fee5faa7d7819d6e1465f92117
+  src/rlredteam/provenance.py: 8efdd8bd924a81c36f98a79865bbb2a07e14c0a650270e925e6e6d28c35910cc
+  configs/catalogues/simulated_world.yaml: a102daf8fd8db0c0c5ba5def0d0e0ccc62513d1a0b0be99f7042bdfd2e40d5db
+  configs/catalogues/mitre.yaml: 751c4afed472a1bce1d8d4b39bfde54b43920d4aa7f4a7a9c766091acfb70a6a
+  pyproject.toml: 74a17ae310a31d60f08a69b5dca0d0fdecabdca82d452a317e821ed08df15162
+  scripts/verify_onprem_protocol.py: 726c2f360f5a2fdb3102ab28a70f8523d0065a0010e83a0ff1ff7128c6170a47
+  src/rlredteam/enterprise/registered_onprem.py: 4000d400c3111afed0d44f21a9b618b162f3e83070ed1571999d86e07be15ffa
+  scripts/train_registered_onprem.py: c8d2279a37987e5613149a9a15426a6bc078c79e80a513f4aa74f77859bc44eb
+  src/rlredteam/enterprise/registered_validation.py: 5779398ff8b6604fa8f44b2cd4e926ddfa13c3174bfddfb3ecfee7d9db195e08
+  configs/onprem_topology.yaml: 6fd04665fa5637bf8183d8f98cab0a5c6fca82acf7549e77495a8239e9a74ab2
+  tests/test_onprem_protocol.py: 020aec84b4cefc97c30dc9ccaacb785e2f1ddd97ce5f6fa5b2283d725be3ee3f
+  tests/test_registered_validation.py: 6d1f361a79db95a5a34890a06dffe7f3195ca9ac774d0f93d8e9e7f8c0306480
+  tests/test_registration_readiness.py: cbb35c1f4f11729e52f2e4e846608da3342368303bbb38796ab342eca6141bb2
+  tests/test_onprem_generalisation.py: d25cd8b350a243f57e1657dc1f6841952d67d3d239238bc90a9add45cb072894
+  tests/test_onprem_topology.py: ca38280cdf43251b4453c3400a998084014d17b125be196f841d5b83f3913fb9
+  tests/test_enterprise_environment.py: 7a15fcd1745dcb5af9a786b26d0d5fcc1a25725ea4b543468191665d03ee0ceb
+  tests/test_nasim_adapter.py: f34dd219e69b615e34ec9c4481841f86c30cb4ebee07d9785a5fbfa3dadd990b
+  tests/test_reward.py: 8ec1094e251c63f463d10b43418371a5a5ede65e945acf9717f886f2248396bc
+  tests/test_confirmatory_discovery.py: 23df0963512c00b3feec44fb1cebf69a15c00bdc284071cac385256cf1c5ab2b
+  tests/test_research_boundaries.py: f509c70303c2548a0b517748579228120854b0976c03aa55e30c88bda48a34d3
+source_provenance:
+  branch: main
+  source_tree_oid: 86e688bab49a78a91fb9d2863fd3df461d839042
+  source_tree_status: runtime and contract-test files match implementation checkpoint
+  git_dirty_at_preparation: true
+  cleanliness_policy: all tracked changes and untracked files block registration; no ignore exceptions
+  topology_generator_sha256: 9ba625cd1ffe6ab8a3789e357d0aee2b38339ac8f6ad12b0cc4908306c60890d
+  topology_config_sha256: 98fa63b38c6412cb84b7f334050f5b3164cd94a82c58cdd900ba6c1c88256411
+  split_sha256: f2ab97742e785ac92418bfa7b0af6d4ef0424aed702838be411cfb08b114af73
+  reward_definition_sha256: cc5ab301ec6c03da39fabdcbc68b0b47a800478617c90b429d168f6fceeaa000
+  dependency_definition_sha256: 74a17ae310a31d60f08a69b5dca0d0fdecabdca82d452a317e821ed08df15162
+  dependency_lock_sha256: null
+  container_package_versions:
+    numpy: 2.1.3
+    gymnasium: 1.0.0
+    torch: 2.8.0+cpu
+    stable-baselines3: 2.9.0
+    sb3-contrib: 2.9.0
+    PyYAML: 6.0.2
+protocol_sha256: f78fa879b20d4552893177a55f7750db09dc32a7b5678f3a6d9808422a4d96ac
+implementation_readiness_policy: derived from executed verifier contract checks; no manual readiness flag
+protected_research_baseline:
+  historical_aggregate_sha256: 511dd93907706767e02b191d01b88f63ca59a7ad352c714dd603a4b2e647bc8d
+  prior_aggregate_sha256: 00d8223ae8503826b47cc5bfae1a2a5ddd3574862bedfffd6618fa6eaafc6fa6
+  excluded_paths:
+  - configs/experiments/onprem_generalisation_registered_v1.yaml
+  - data/knowledge/
+  change_reason: engineering-only untracked knowledge archived byte-for-byte outside Git; historical research
+    files unchanged
+  cve_catalogue_sha256: 351a653e358ecb29eb283d28775c2bc0565d6b5af5fb9ccf2f36447e69738870
+  cve_manifest_sha256: 0cf31e0b1d977b5d97feae7b11df9152fff3455ac0acc41d4fc65f54bf0f2797
+reward_implementation_sha256: a7dfcefea42f05824c1e44b8377dae9a4ea2a0c7f68d46a266a7f38b55fca123
+container_image_id: b3f6e30427bd549301013f30fc26daf4e19026ab8d596b09a24537e0b2b40d4e
+research_boundary: GENERALISATION_RESEARCH
+historical_pilot: configs/experiments/onprem_generalisation.yaml
+training_seeds: [42, 43, 44, 45, 46, 47, 48, 49, 50, 51]
+campaign_unit: one PPO run per training_seed sampling the entire training topology pool
+training_sampling:
+  topology_selection: uniform choice from training pool each episode
+  episode_randomness: independent NumPy default_rng seeded by training_seed yields explicit per-episode integer seeds
+  audit_fields: [training_seed, training_episode_seed, topology_seed, topology_hash, episode_index]
+  policy_inputs: observation array and AgentKnowledge action mask only; reset/step metadata for logging only
+authorized_start_seeds: [42]
+total_timesteps: 1000192
+n_envs: 1
+algorithm: MaskablePPO
+device: cpu
+ppo:
+  learning_rate: 0.0003
+  n_steps: 256
+  batch_size: 64
+  n_epochs: 10
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  ent_coef: 0.01
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+  policy_layers: [128, 128]
+topology:
+  min_segments: 1
+  max_segments: 5
+  min_hosts: 10
+  max_hosts: 60
+  min_pivots: 0
+  max_pivots: 3
+  min_decoy_services: 1
+  max_decoy_services: 10
+  min_application_hops: 1
+  max_application_hops: 3
+  max_nodes: 96
+  max_vulnerabilities: 8
+  max_steps: 200
+generator_semantics:
+  vulnerability_count: 1
+  variable_vulnerability_identity_and_cvss: true
+  synthetic_vulnerability_source: configs/catalogues/simulated_world.yaml
+  frozen_cve_sqlite_used: false
+  synthetic_cvss_range: [7.0, 9.8]
+  exploit_probability: 1.0
+  maximum_generated_nodes: 85
+splits:
+  train: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60]
+  validation: [1001,1002,1003,1004,1005,1006,1007,1008,1009,1010,1011,1012,1013,1014,1015,1016,1017,1018,1019,1020]
+  test: [16001,16002,16003,16004,16005,16006,16007,16008,16009,16010,16011,16012,16013,16014,16015,16016,16017,16018,16019,16020]
+freshness:
+  evidence_scope: local runs and results; prior declared topology seeds also excluded
+  inventory_sha256: 039b1619667820014ab60d0780e3d4290af9af335bd602eeaa5fb18c549b705d
+  candidate_selection: first unused 20-seed block starting at 2001 in increments of 1000
+  global_untouched_claim: false
+reward:
+  version: enterprise-native-state-change-v1
+  historical_nasim_equivalence: false
+  combination: exclusive branches, not additive; failure precedes no-change and action reward
+  normalization: none
+  tactic_mapping_dependency: false
+  components:
+    invalid_action:
+      trigger: failed action precondition
+      scalar: -5.0
+      payment: repeatable
+      novelty: false
+      cve_cvss: false
+      mitre: false
+    stochastic_exploit_failure:
+      trigger: exploit random draw exceeds probability
+      scalar: -5.0
+      payment: repeatable
+      novelty: false
+      cve_cvss: false
+      mitre: false
+    no_state_change:
+      trigger: successful valid action leaves AgentKnowledge snapshot unchanged
+      scalar: -1.0
+      payment: repeatable
+      novelty: false
+      cve_cvss: false
+      mitre: false
+    information_state_change:
+      trigger: discover_network, enumerate_host, enumerate_service, enumerate_application or assess_vulnerability changes AgentKnowledge
+      scalar: 1.0
+      payment: once per action-kind and entity per episode
+      novelty: AgentKnowledge snapshot including enumerated/assessed markers, not new-node count
+      cve_cvss: false
+      mitre: false
+    exploit:
+      trigger: successful exploit changes AgentKnowledge
+      formula: 0.5 + synthetic_cvss / 10.0
+      payment: once per access target per episode
+      novelty: true
+      cve_cvss: true
+      mitre: false
+    obtain_credential:
+      trigger: successful credential acquisition changes AgentKnowledge
+      scalar: 2.0
+      payment: once per credential per episode
+      novelty: true
+      cve_cvss: false
+      mitre: false
+    authenticate:
+      trigger: successful authentication changes AgentKnowledge
+      scalar: 3.0
+      payment: once per access target per episode
+      novelty: true
+      cve_cvss: false
+      mitre: false
+    pivot:
+      trigger: successful pivot changes AgentKnowledge
+      scalar: 3.0
+      payment: once per access target per episode
+      novelty: true
+      cve_cvss: false
+      mitre: false
+    escalate_privilege:
+      trigger: user-to-root transition with known root vulnerability
+      scalar: 4.0
+      payment: once per target per episode
+      novelty: true
+      cve_cvss: requires known privilege vulnerability; no CVSS weighting
+      mitre: false
+    objective:
+      trigger: successful access_asset to a crown jewel changes AgentKnowledge
+      scalar: 100.0
+      payment: once per crown jewel; terminates episode on first objective
+      novelty: true
+      cve_cvss: false
+      mitre: false
+    other_state_change:
+      trigger: valid changed action not matched above
+      scalar: 0.0
+      payment: per valid changed action
+      novelty: true
+      cve_cvss: false
+      mitre: false
+discovery_semantics:
+  version: agentknowledge-set-and-snapshot-v1
+  count: cardinality of AgentKnowledge.discovered
+  repeated_discovery: no new set members and no repeated valid discovery payment
+  caveat: first enumeration/assessment can earn information-state reward with zero newly discovered nodes
+outcomes:
+  primary: zero-shot success rate on final unseen topology seeds
+  success: terminated by nonempty intersection of accessed_assets and crown_jewels
+  aggregation: equally weighted topology episodes within training seed; report all ten seeds
+  efficiency: mean steps-to-success among successful episodes only; null when no successes
+  supporting: [environment_return, failed_actions]
+  descriptive: [per_topology_success, per_training_seed_success, episode_length]
+evaluation:
+  deterministic: true
+  evaluation_episode_seeds: [19001]
+  validation_schedule: after each fixed-budget training run; descriptive only, no model selection or tuning
+  final_test_schedule: only after all ten fixed-budget policies and configuration are frozen; separately invoked
+  final_test_authorized_now: false
+  policy_updates: false
+  policy_hash_before_after_required: true
+  checkpoint_choice: terminal fixed-budget checkpoint
+convergence:
+  version: distribution-return-diagnostic-v1-draft
+  decision_role: descriptive per-seed post-training diagnosis; never early stopping or seed exclusion
+  episode_window: 100
+  minimum_completed_episodes: 600
+  rise: last-300 episode mean minus first-100 mean >= max(5, 0.10 * abs(first-100 mean))
+  stability: range of last three disjoint 100-episode means <= max(5, 0.10 * abs(last-300 mean))
+  late_collapse: last-100 mean below best complete 100-episode block mean by more than max(5, 0.20 * abs(best mean))
+  diagnostics: all recorded non-missing values finite; required final values present
+  required_diagnostics: [approx_kl, clip_fraction, explained_variance, entropy_loss, policy_gradient_loss, value_loss]
+  ten_seed_rule: report each seed, number passing, and all failures; do not replace or discard seeds
+  validation_stability_claim: false
+  final_test_access: false
+confirmatory_rerun:
+  status: parked
+  full_ten_seed_rerun: false
+  bounded_check_planned: false
+  frozen_baseline_primary: true
+  defect_audit:
+    confirmed_erroneous_payments: 16598
+    affected_positive_reward_fraction_percent: 0.0203
+    affected_positive_reward_fraction_precision: approximate
+    affected_tactic_recon_fraction_percent: 1.33
+    affected_tactic_recon_fraction_precision: approximate; supplied brief, not independently located in local audit
+    source: docs/CONFIRMATORY_DISCOVERY_COUNT_V3.md
+safety:
+  simulation_only: true
+  live_collection: false
+  digital_twin_input: false
+  postgres_required: false
+

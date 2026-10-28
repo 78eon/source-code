@@ -1,253 +1,180 @@
-/* RLRedTeam analyst skin.
- *
- * Tokens of the form AT-NAME-AT are substituted by theme.build_stylesheet(),
- * so colours cannot drift between here and the code that paints charts and
- * graphics items, which QSS cannot reach.
- *
- * Flat by design: every border is 1px solid, corner radius is 0 everywhere, and
- * nothing relies on shadows, gradients or transforms -- all of which QSS either
- * cannot do or renders unreliably.
- */
-
-QWidget {
-    background: @WINDOW@;
-    color: @TEXT@;
-    font-family: "@FONT_SANS@";
-    font-size: @SIZE_BODY@px;
+* {
+    font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+    font-size: 13px;
+    color: #e8f0f1;
 }
-
-QMainWindow, QDialog { background: @WINDOW@; }
-
-/* -- nav rail ----------------------------------------------------------- */
-
-#navRail {
-    background: @PANEL@;
-    border-right: 1px solid @BORDER@;
+QWidget, QMainWindow, QWidget#Root { background: #071013; }
+QFrame#Sidebar {
+    background: #071114;
+    border-right: 1px solid #1c3035;
 }
-#navRail QPushButton {
-    background: transparent;
-    border: 0;
-    border-left: 2px solid transparent;
-    padding: 9px 14px;
+QLabel#Brand {
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: #e8f0f1;
+}
+QLabel#BrandSub, QLabel#Eyebrow, QLabel#MetricLabel, QLabel#FieldLabel {
+    color: #72888e;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+}
+QLabel#Muted { color: #7f969b; }
+QLabel#PageTitle { font-size: 18px; font-weight: 600; }
+QLabel#ViewTitle { font-size: 25px; font-weight: 650; }
+QLabel#HeroTitle { font-size: 21px; font-weight: 650; color: #ffffff; }
+QLabel#SectionTitle { font-size: 13px; font-weight: 650; color: #d6e3e5; }
+QLabel#MonoDetail {
+    color: #86a5aa;
+    font-family: "IBM Plex Mono", "Consolas", monospace;
+    font-size: 11px;
+}
+QLabel#DatasetValue {
+    color: #d6e3e5;
+    font-family: "IBM Plex Mono", "Consolas", monospace;
+    font-size: 22px;
+    font-weight: 600;
+}
+QLabel#StateLabel {
+    color: #b7f04a;
+    font-family: "IBM Plex Mono", "Consolas", monospace;
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: 1px;
+    min-width: 88px;
+}
+QLabel#StateLabel[kind="warn"] { color: #ffba52; }
+
+QPushButton#Nav {
+    min-height: 38px;
     text-align: left;
-    color: @TEXT_SECONDARY@;
-    font-size: @SIZE_BODY@px;
-}
-#navRail QPushButton:hover { background: @SURFACE@; color: @TEXT@; }
-#navRail QPushButton:checked {
-    background: @SURFACE@;
-    border-left: 2px solid @ARM_1@;
-    color: @TEXT@;
-}
-
-#appTitle {
-    background: @PANEL@;
-    color: @TEXT_SECONDARY@;
-    font-family: "@FONT_MONO@";
-    font-size: @SIZE_SMALL@px;
-    padding: 10px 14px;
-    border-bottom: 1px solid @BORDER@;
-}
-
-/* -- panels ------------------------------------------------------------- */
-
-#surface { background: @SURFACE@; }
-#panel   { background: @PANEL@; border-left: 1px solid @BORDER@; }
-
-#viewTitle {
-    font-size: @SIZE_TITLE@px;
-    font-weight: 600;
-    color: @TEXT@;
-    background: transparent;
-}
-#viewSubtitle {
-    color: @TEXT_TERTIARY@;
-    font-size: @SIZE_SMALL@px;
-    background: transparent;
-}
-#panelHeading {
-    font-size: @SIZE_HEADING@px;
-    font-weight: 600;
-    color: @TEXT@;
-    background: transparent;
-}
-#sectionLabel {
-    font-family: "@FONT_MONO@";
-    font-size: @SIZE_LABEL@px;
-    color: @TEXT_TERTIARY@;
-    background: transparent;
-}
-#mono, #monoValue {
-    font-family: "@FONT_MONO@";
-    font-size: @SIZE_MONO@px;
-    color: @TEXT_BRIGHT@;
-    background: transparent;
-}
-#muted { color: @TEXT_SECONDARY@; background: transparent; }
-
-/* -- metric tile -------------------------------------------------------- */
-
-#metricTile {
-    background: @SURFACE@;
-    border: 1px solid @BORDER@;
-}
-#metricValue {
-    font-family: "@FONT_MONO@";
-    font-size: 27px;
-    font-weight: 500;
-    color: @TEXT@;
-    background: transparent;
-}
-#metricLabel {
-    font-family: "@FONT_MONO@";
-    font-size: @SIZE_LABEL@px;
-    color: @TEXT_TERTIARY@;
-    background: transparent;
-}
-#metricDelta {
-    font-family: "@FONT_MONO@";
-    font-size: @SIZE_SMALL@px;
-    color: @TEXT_SECONDARY@;
-    background: transparent;
-}
-
-/* -- tables ------------------------------------------------------------- */
-
-QTableView {
-    background: @SURFACE@;
-    alternate-background-color: @SURFACE@;
-    gridline-color: @RULE@;
-    border: 1px solid @BORDER@;
-    selection-background-color: @SELECTION@;
-    selection-color: @TEXT@;
-    outline: 0;
-}
-QTableView::item { padding: 0px 10px; border-bottom: 1px solid @RULE@; }
-QTableView::item:selected { background: @SELECTION@; color: @TEXT@; }
-QTableView::item:hover { background: @HEADER@; }
-
-QHeaderView::section {
-    background: @HEADER@;
-    color: @TEXT_TERTIARY@;
-    font-family: "@FONT_MONO@";
-    font-size: @SIZE_LABEL@px;
-    padding: 8px 10px;
     border: 0;
-    border-bottom: 1px solid @BORDER@;
-    border-right: 1px solid @RULE@;
+    border-radius: 4px;
+    padding: 0 12px;
+    color: #89a0a5;
+    background: transparent;
 }
-QTableView QTableCornerButton::section { background: @HEADER@; border: 0; }
+QPushButton#Nav:hover { background: #0e2024; color: #e8f0f1; }
+QPushButton#Nav:checked {
+    background: #10262a;
+    color: #48dbe2;
+    border-left: 3px solid #48dbe2;
+}
+QPushButton#Primary, QPushButton#Action {
+    min-height: 34px;
+    border: 1px solid #2b5d62;
+    border-radius: 4px;
+    padding: 0 14px;
+    background: #123035;
+    color: #a4e9eb;
+}
+QPushButton#Action {
+    border-color: #294147;
+    background: #0b191c;
+    color: #a3b5b8;
+}
+QPushButton#Primary:hover, QPushButton#Action:hover {
+    border-color: #48dbe2;
+    color: #ffffff;
+}
+QPushButton:disabled { color: #526b71; border-color: #1c3035; background: #0a1518; }
 
-/* -- buttons ------------------------------------------------------------ */
-
-QPushButton {
-    background: @HEADER@;
-    border: 1px solid @BORDER_STRONG@;
-    padding: 6px 12px;
-    color: @TEXT@;
+QFrame#Panel, QFrame#Metric, QFrame#HeroPanel, QFrame#DatasetCard,
+QFrame#BoundaryPanel, QFrame#StateBanner {
+    background: #0a1619;
+    border: 1px solid #1c3035;
+    border-radius: 5px;
 }
-QPushButton:hover { background: @RAISED@; }
-QPushButton:pressed { background: @PANEL@; }
-QPushButton:disabled { color: @TEXT_MUTED@; border-color: @BORDER@; }
-QPushButton[primary="true"] {
-    background: @PRIMARY_FILL@;
-    border: 1px solid @ARM_1@;
-    color: @ARM_1_LIGHT@;
-}
-QPushButton[primary="true"]:hover { background: #21385a; }
-QPushButton[danger="true"] {
-    background: #241519;
-    border: 1px solid @ERROR@;
-    color: @ERROR_TEXT@;
-}
-
-/* -- inputs ------------------------------------------------------------- */
-
-QLineEdit, QSpinBox, QComboBox {
-    background: @SURFACE@;
-    border: 1px solid @BORDER_STRONG@;
-    padding: 5px 8px;
-    color: @TEXT@;
-    selection-background-color: @ARM_1@;
-}
-QLineEdit:focus, QSpinBox:focus, QComboBox:focus { border: 1px solid @ARM_1@; }
-QComboBox::drop-down { border: 0; width: 18px; }
-QComboBox QAbstractItemView {
-    background: @HEADER@;
-    border: 1px solid @BORDER_STRONG@;
-    selection-background-color: @SELECTION@;
-}
-QCheckBox { spacing: 7px; background: transparent; }
-QCheckBox::indicator {
-    width: 13px; height: 13px;
-    border: 1px solid @BORDER_STRONG@;
-    background: @SURFACE@;
-}
-QCheckBox::indicator:checked { background: @ARM_1@; border-color: @ARM_1@; }
-
-/* -- segmented toggle --------------------------------------------------- */
-/* Native is correct and default; shaped must feel deliberate, so the two
- * segments are visually asymmetric when shaped is active. */
-
-#segment QPushButton {
-    background: @SURFACE@;
-    border: 1px solid @BORDER_STRONG@;
-    padding: 5px 14px;
-    color: @TEXT_SECONDARY@;
-}
-#segment QPushButton:checked {
-    background: @PRIMARY_FILL@;
-    border-color: @ARM_1@;
-    color: @ARM_1_LIGHT@;
-}
-#segment QPushButton[warnState="true"]:checked {
-    background: @TINT_WARN@;
-    border-color: @WARN@;
-    color: @WARN_TEXT@;
+QFrame#HeroPanel { background: #0c1c20; border-left: 3px solid #48dbe2; }
+QFrame#Metric { background: #0d1b1f; min-height: 92px; }
+QFrame#StateBanner { background: #0b1a1d; border-left: 3px solid #b7f04a; }
+QFrame#BoundaryPanel { background: #091619; }
+QLabel#MetricValue {
+    font-family: "IBM Plex Mono", "Consolas", monospace;
+    font-size: 25px;
+    font-weight: 650;
+    color: #48dbe2;
 }
 
-/* -- log ---------------------------------------------------------------- */
-
-QPlainTextEdit {
-    background: @PANEL@;
-    border: 1px solid @BORDER@;
-    color: @TEXT_SECONDARY@;
-    font-family: "@FONT_MONO@";
-    font-size: @SIZE_SMALL@px;
-    selection-background-color: @SELECTION@;
+QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
+    min-height: 34px;
+    border: 1px solid #294147;
+    border-radius: 4px;
+    background: #081316;
+    padding: 0 10px;
+    selection-background-color: #20575b;
 }
-
-/* -- misc --------------------------------------------------------------- */
-
-QSplitter::handle { background: @BORDER@; width: 1px; }
-QStatusBar {
-    background: @PANEL@;
-    border-top: 1px solid @BORDER@;
-    color: @TEXT_TERTIARY@;
-    font-family: "@FONT_MONO@";
-    font-size: @SIZE_LABEL@px;
+QComboBox::drop-down { border: 0; width: 24px; }
+QTableWidget {
+    border: 0;
+    background: #0a1619;
+    alternate-background-color: #0d1b1f;
+    gridline-color: #1a3035;
+    selection-background-color: #17363c;
+    selection-color: #ffffff;
 }
-QStatusBar::item { border: 0; }
-
-QScrollBar:vertical { background: @WINDOW@; width: 11px; margin: 0; }
-QScrollBar::handle:vertical { background: @BORDER_STRONG@; min-height: 24px; }
-QScrollBar::handle:vertical:hover { background: @BORDER_SOFT@; }
-QScrollBar:horizontal { background: @WINDOW@; height: 11px; margin: 0; }
-QScrollBar::handle:horizontal { background: @BORDER_STRONG@; min-width: 24px; }
-QScrollBar::add-line, QScrollBar::sub-line { height: 0; width: 0; }
-QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
-
-QToolTip {
-    background: @HEADER@;
-    border: 1px solid @BORDER_STRONG@;
-    color: @TEXT@;
-    padding: 4px 7px;
+QHeaderView::section {
+    background: #0b171b;
+    color: #7c9398;
+    border: 0;
+    border-bottom: 1px solid #294147;
+    padding: 10px 9px;
+    font-size: 10px;
+    font-weight: 600;
 }
+QTableWidget::item { padding: 8px; border-bottom: 1px solid #172b30; }
+QGraphicsView#EnterpriseGraph { border: 1px solid #1c3035; background: #071114; }
+QScrollArea, QScrollArea > QWidget > QWidget { border: 0; background: #071013; }
+QScrollBar:vertical { background: #081316; width: 10px; }
+QScrollBar::handle:vertical { background: #294147; border-radius: 4px; min-height: 32px; }
+QScrollBar:horizontal { background: #081316; height: 10px; }
+QScrollBar::handle:horizontal { background: #294147; border-radius: 4px; min-width: 32px; }
+QStatusBar { background: #071013; border-top: 1px solid #1c3035; color: #72888e; }
+QToolTip { background: #112426; color: #e8f0f1; border: 1px solid #2c555b; }
 
-QProgressBar {
-    background: @SURFACE@;
-    border: 1px solid @BORDER@;
-    height: 6px;
-    text-align: center;
+QLabel#ActionLayer {
+    color: #a5bec3;
+    background: #081316;
+    border: 1px solid #1c3035;
+    border-radius: 4px;
+    padding: 8px;
+    font-family: "IBM Plex Mono", "Consolas", monospace;
+    font-size: 10px;
 }
-QProgressBar::chunk { background: @ARM_1@; }
+QLabel#MatrixSummary { color: #86a5aa; font-size: 11px; }
+QLabel#TacticId, QLabel#TechniqueId, QLabel#TechniqueCount {
+    color: #72888e;
+    font-family: "IBM Plex Mono", "Consolas", monospace;
+    font-size: 9px;
+}
+QLabel#TacticName { color: #d6e3e5; font-weight: 650; }
+QLabel#TechniqueName { color: #9db1b5; font-size: 11px; }
+QFrame#TacticColumn {
+    background: #081316;
+    border: 1px solid #1c3035;
+    border-radius: 4px;
+}
+QFrame#TechniqueCell {
+    background: #0a1619;
+    border: 1px solid #1c3035;
+    border-radius: 3px;
+}
+QFrame#TechniqueCell[state="attempted"] { border-color: #ffba52; background: #2a1f16; }
+QFrame#TechniqueCell[state="progressed"] { border-color: #48dbe2; background: #10262a; }
+QFrame#TechniqueCell[state="current"] { border: 2px solid #b7f04a; background: #142c27; }
+QTabWidget::pane { border: 1px solid #1c3035; background: #071114; }
+QTabBar::tab {
+    background: #0b171b;
+    color: #72888e;
+    border: 1px solid #1c3035;
+    padding: 8px 14px;
+}
+QTabBar::tab:selected { color: #48dbe2; border-bottom: 2px solid #48dbe2; }
+QSlider::groove:horizontal { height: 4px; background: #1c3035; }
+QSlider::handle:horizontal {
+    background: #48dbe2;
+    border: 1px solid #86e3e5;
+    width: 14px;
+    margin: -6px 0;
+    border-radius: 7px;
+}

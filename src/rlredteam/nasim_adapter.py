@@ -12,7 +12,10 @@ Two NASim facts drive the design, both verified against nasim 0.12.0:
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 import gymnasium as gym
+import numpy as np
 from nasim.envs.action import (
     Exploit,
     NoOp,
@@ -25,8 +28,16 @@ from nasim.envs.action import (
 
 from rlredteam.assign import Assignment, assign_cves
 from rlredteam.catalogue import CVECatalogue
+from rlredteam.enterprise.model import NodeType
+from rlredteam.enterprise.state import AgentKnowledge
 from rlredteam.events import AccessLevel, ActionKind, AttackEvent
 from rlredteam.reward import RewardBreakdown, RewardConfig, RewardEngine
+from rlredteam.simulator_adapter import (
+    KnowledgeDelta,
+    SemanticAction,
+    SimulatorAdapter,
+    SimulatorTransition,
+)
 
 _ACTION_KIND: dict[type, ActionKind] = {
     Exploit: ActionKind.EXPLOIT,
@@ -43,7 +54,9 @@ class AdapterError(RuntimeError):
     pass
 
 
-def _access_level(raw: object) -> AccessLevel:
+def _access_level(
+    raw: object, target: tuple[int, int] | None = None
+) -> AccessLevel:
     """Normalise ``info["access"]`` to an AccessLevel.
 
     NASim's ActionResult docstring documents ``access`` as a dict of
@@ -56,14 +69,33 @@ def _access_level(raw: object) -> AccessLevel:
     if not raw:
         return AccessLevel.NONE
     if isinstance(raw, dict):
-        return AccessLevel(int(max(raw.values())))
+        if target is not None:
+            # Access belongs to the action's target. Taking max(raw.values())
+            # can incorrectly report ROOT on B merely because A was already
+            # root-compromised, corrupting reward and path reconstruction.
+            return AccessLevel(int(raw.get(target, AccessLevel.NONE)))
+        if len(raw) == 1:
+            return AccessLevel(int(next(iter(raw.values()))))
+        if len(raw) > 1:
+            raise AdapterError("target is required for a multi-host access mapping")
+        return AccessLevel.NONE
     return AccessLevel(int(raw))
 
 
 def _count(raw: object) -> int:
-    """Length of a dict/collection field, tolerating a bare count or None."""
-    if not raw:
+    """Count NASim discoveries from a host->bool map, count, or collection.
+
+    NASim 0.12 subnet scans provide one boolean per host, including False for
+    hosts that were not newly discovered. None, bare integer counts and
+    non-mapping collections retain the historical interpretation. Unknown
+    mapping value shapes fail explicitly instead of fabricating discoveries.
+    """
+    if raw is None:
         return 0
+    if isinstance(raw, Mapping):
+        if not all(type(value) is bool for value in raw.values()):
+            raise AdapterError("NASim discovery mapping requires boolean host flags")
+        return sum(raw.values())
     if isinstance(raw, int):
         return raw
     return len(raw)
@@ -125,15 +157,15 @@ class NASimEventAdapter:
         record = self.assignment.cve_for(action.name)
         success = bool(info.get("success", False))
 
-        access = _access_level(info.get("access"))
+        access = _access_level(info.get("access"), target)
 
-        error = None
+        error = "mitigation_disabled" if info.get("mitigation_blocked") else None
         for flag, label in (
             ("connection_error", "connection"),
             ("permission_error", "permission"),
             ("undefined_error", "undefined"),
         ):
-            if info.get(flag):
+            if error is None and info.get(flag):
                 error = label
                 break
 
@@ -143,6 +175,7 @@ class NASimEventAdapter:
             action_name=action.name,
             target=target,
             success=success,
+            rl_action_index=int(action_idx),
             native_reward=float(reward),
             cost=float(action.cost),
             cve_id=record.cve_id if record else None,
@@ -220,3 +253,132 @@ class RewardWrapper(gym.Wrapper):
         info["reward_breakdown"] = breakdown
         info["attack_event"] = event
         return obs, breakdown.total, done, step_limit_reached, info
+
+
+class NASimSimulatorAdapter(SimulatorAdapter):
+    """Additive common-contract facade over the frozen NASim reward wrapper.
+
+    Existing training and evaluation continue to use :class:`RewardWrapper`
+    directly.  This facade proves NASim and other simulators can expose the
+    same semantic boundary without altering the frozen NASim execution path.
+    """
+
+    def __init__(self, environment: RewardWrapper) -> None:
+        self.environment = environment
+        self._knowledge = AgentKnowledge()
+        self._catalogue = self._build_action_catalogue()
+
+    @property
+    def agent_knowledge(self) -> AgentKnowledge:
+        return self._knowledge
+
+    @property
+    def action_space(self):
+        return self.environment.action_space
+
+    @property
+    def observation_space(self):
+        return self.environment.observation_space
+
+    def _build_action_catalogue(self) -> tuple[SemanticAction, ...]:
+        rows: list[SemanticAction] = []
+        for index in range(int(self.environment.action_space.n)):
+            action = self.environment.action_space.get_action(index)
+            kind = self.environment.adapter.kind_of(action)
+            rows.append(
+                SemanticAction(
+                    index=index,
+                    native_kind=type(action).__name__,
+                    simulator_action=str(action.name),
+                    semantic_behavior=str(kind),
+                )
+            )
+        return tuple(rows)
+
+    def action_catalogue(self) -> tuple[SemanticAction, ...]:
+        return self._catalogue
+
+    def action_mask(self) -> np.ndarray | None:
+        return None
+
+    def convert_observation(self, native_observation) -> np.ndarray:
+        return np.asarray(native_observation, dtype=np.float32).reshape(-1).copy()
+
+    def reset(self, *, seed: int | None = None):
+        self._knowledge = AgentKnowledge()
+        observation, info = self.environment.reset(seed=seed)
+        return self.convert_observation(observation), dict(info)
+
+    def update_agent_knowledge(
+        self, native_observation, *, native_info=None
+    ) -> KnowledgeDelta:
+        del native_observation
+        info = dict(native_info or {})
+        event = info.get("attack_event")
+        if not isinstance(event, AttackEvent):
+            return KnowledgeDelta()
+
+        before_nodes = set(self._knowledge.discovered)
+        before_access = dict(self._knowledge.access)
+        target = event.target
+        if isinstance(target, tuple) and event.success:
+            node_id = f"nasim:{target[0]}.{target[1]}"
+            self._knowledge.discover(node_id, NodeType.HOST, reachable=True)
+            if event.kind.is_scan:
+                self._knowledge.enumerated.add(node_id)
+            if event.access_gained > AccessLevel.NONE:
+                self._knowledge.access[node_id] = (
+                    "root" if event.access_gained is AccessLevel.ROOT else "user"
+                )
+            if event.cve_id:
+                self._knowledge.learn_vulnerability(
+                    event.cve_id,
+                    node_id,
+                    grants_access_to=node_id,
+                    privilege=self._knowledge.access.get(node_id, "user"),
+                )
+
+        new_nodes = tuple(sorted(self._knowledge.discovered - before_nodes))
+        changed_access = tuple(
+            sorted(
+                (node, level)
+                for node, level in self._knowledge.access.items()
+                if before_access.get(node) != level
+            )
+        )
+        return KnowledgeDelta(discovered_nodes=new_nodes, access_changes=changed_access)
+
+    def native_result_to_event(self, native_result):
+        event = native_result.get("attack_event")
+        if not isinstance(event, AttackEvent):
+            raise AdapterError("NASim result does not contain a normalised attack event")
+        return event, str(event.kind)
+
+    def step(self, action: int):
+        index = int(action)
+        if not 0 <= index < len(self._catalogue):
+            raise ValueError(f"action {index} outside common NASim catalogue")
+        observation, reward, terminated, truncated, info = self.environment.step(index)
+        event, behavior = self.native_result_to_event(info)
+        delta = self.update_agent_knowledge(observation, native_info=info)
+        transition = SimulatorTransition(
+            observation=self.convert_observation(observation),
+            reward=float(reward),
+            terminated=bool(terminated),
+            truncated=bool(truncated),
+            event=event,
+            action=self._catalogue[index],
+            semantic_behavior=behavior,
+            simulator_action=event.action_name,
+            simulator_vulnerability_id=None,
+            knowledge_delta=delta,
+        )
+        output_info = dict(info)
+        output_info["simulator_transition"] = transition
+        return (
+            transition.observation,
+            transition.reward,
+            transition.terminated,
+            transition.truncated,
+            output_info,
+        )

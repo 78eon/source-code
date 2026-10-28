@@ -10,6 +10,9 @@ import pytest
 
 psycopg = pytest.importorskip("psycopg")
 
+from gui.data.repository import Repository  # noqa: E402
+from rlredteam.attack_path_report import build_report  # noqa: E402
+from rlredteam.storage.mitigation_store import MitigationStore  # noqa: E402
 from rlredteam.storage.postgres_logger import (  # noqa: E402
     EpisodeLogger,
     EpisodeRecord,
@@ -17,6 +20,8 @@ from rlredteam.storage.postgres_logger import (  # noqa: E402
     connection_string,
     ensure_schema,
 )
+from rlredteam.storage.report_store import ReportStore  # noqa: E402
+from tests.test_mitigation import make_mitigation_report  # noqa: E402
 
 pytestmark = pytest.mark.postgres
 
@@ -75,6 +80,7 @@ def make_episode(idx: int, *, steps: int = 3) -> EpisodeRecord:
                 step_idx=s,
                 action_name=f"e_srv_{s}",
                 action_kind="exploit",
+                rl_action_index=100 + s,
                 tactic="exploit",
                 technique_id="T1210",
                 target_subnet=1,
@@ -84,6 +90,18 @@ def make_episode(idx: int, *, steps: int = 3) -> EpisodeRecord:
                 native_reward=1.0,
                 cve_id="CVE-2021-42013",
                 cvss_base=9.8,
+                cve_term=2.5,
+                tactic_term=0.5,
+                crown_jewel_term=100.0 if s == steps - 1 else 0.0,
+                penalty_term=0.0,
+                access_gained=1,
+                newly_discovered=1,
+                is_crown_jewel=s == steps - 1,
+                reward_paid=True,
+                target_entity=f"host_{s}",
+                state_changed=True,
+                prerequisites=["known:service"],
+                outcomes=[f"access:host_{s}"],
             )
             for s in range(steps)
         ],
@@ -134,6 +152,266 @@ def test_episode_reads_back_with_values_intact(logger: EpisodeLogger, conninfo: 
     assert row[6] == pytest.approx(8.4)
 
 
+def test_experiment_reconstructs_run_episode_and_attributed_steps(
+    logger: EpisodeLogger, conninfo: str
+) -> None:
+    logger.log_episode(make_episode(0))
+    logger.flush()
+
+    with psycopg.connect(conninfo) as conn:
+        rows = conn.execute(
+            """
+            SELECT e.name, r.designation, r.status, ep.episode_idx,
+                   ep.terminal_state, s.step_idx, s.action_name,
+                   s.cve_term, s.tactic_term, s.crown_jewel_term,
+                   s.access_gained, s.is_crown_jewel
+            FROM experiments e
+            JOIN runs r ON r.experiment_id = e.id
+            JOIN episodes ep ON ep.run_id = r.id
+            JOIN steps s ON s.episode_id = ep.id
+            WHERE e.id = %s
+            ORDER BY ep.episode_idx, s.step_idx
+            """,
+            (logger.experiment_id,),
+        ).fetchall()
+
+    assert len(rows) == 3
+    assert rows[0][:7] == (
+        "pytest-synthetic",
+        "training",
+        "running",
+        0,
+        "goal",
+        0,
+        "e_srv_0",
+    )
+    assert rows[0][7:11] == pytest.approx((2.5, 0.5, 0.0, 1))
+    assert rows[-1][9] == pytest.approx(100.0)
+    assert rows[-1][11] is True
+
+
+def test_enterprise_step_evidence_round_trips(logger: EpisodeLogger, conninfo: str) -> None:
+    record = make_episode(0)
+    record.topology_hash = "topology-realised-42"
+    record.known_nodes = 12
+    record.true_nodes = 15
+    record.discovery_coverage = 0.8
+    logger.log_episode(record)
+    logger.flush()
+
+    with psycopg.connect(conninfo) as conn:
+        row = conn.execute(
+            """
+            SELECT ep.topology_hash, ep.known_nodes, ep.true_nodes,
+                   ep.discovery_coverage, s.target_entity, s.state_changed,
+                   s.prerequisites, s.outcomes
+            FROM episodes ep JOIN steps s ON s.episode_id = ep.id
+            WHERE ep.experiment_id = %s
+            ORDER BY s.step_idx LIMIT 1
+            """,
+            (logger.experiment_id,),
+        ).fetchone()
+
+    assert row[:3] == ("topology-realised-42", 12, 15)
+    assert row[3] == pytest.approx(0.8)
+    assert row[4:] == ("host_0", True, ["known:service"], ["access:host_0"])
+
+
+def test_framework_semantics_round_trip_separately_from_actions(
+    logger: EpisodeLogger, conninfo: str
+) -> None:
+    logger.log_episode(make_episode(0, steps=1))
+    logger.flush()
+
+    with psycopg.connect(conninfo) as conn:
+        row = conn.execute(
+            """
+            SELECT s.rl_action_index, s.simulator_action,
+                   s.framework_mappings, s.action_kind, s.tactic
+            FROM steps s
+            JOIN episodes ep ON ep.id = s.episode_id
+            WHERE ep.experiment_id = %s
+            """,
+            (logger.experiment_id,),
+        ).fetchone()
+        exposed = conn.execute(
+            """
+            SELECT ft.rl_action_index, ft.simulator_action, ft.framework,
+                   ft.mapping_version, ft.tactic_id, ft.technique_id,
+                   ft.technique_name
+            FROM step_framework_techniques ft
+            JOIN episodes ep ON ep.id = ft.episode_id
+            WHERE ep.experiment_id = %s AND ft.step_idx = 0
+            """,
+            (logger.experiment_id,),
+        ).fetchone()
+
+    assert row[0] == 100
+    assert row[1] == "e_srv_0"
+    assert row[2][0]["framework"] == "attack-enterprise"
+    assert row[2][0]["technique_id"] == "T1210"
+    assert row[3:] == ("exploit", "exploit")
+    assert exposed == (
+        100,
+        "e_srv_0",
+        "attack-enterprise",
+        "security-rl-mitre-v1",
+        "TA0008",
+        "T1210",
+        "Exploitation of Remote Services",
+    )
+
+
+def test_phase14_derived_report_round_trips_without_changing_raw_steps(
+    logger: EpisodeLogger, conninfo: str
+) -> None:
+    logger.log_episode(make_episode(0, steps=1))
+    logger.flush()
+    document = [
+        {
+            "run_name": "pytest-synthetic",
+            "evaluation_seed": 1001,
+            "training_seed": 42,
+            "reward_mode": "shaped",
+            "policy_return": 1.0,
+            "native_return": 1.0,
+            "goal_reached": True,
+            "events": [
+                {
+                    "step": 0,
+                    "action": "e_srv_0",
+                    "action_kind": "exploit",
+                    "target": [1, 0],
+                    "success": True,
+                    "state_changed": True,
+                    "is_crown_jewel": True,
+                    "cve_id": "CVE-2021-42013",
+                    "cvss_base": 9.8,
+                }
+            ],
+        }
+    ]
+    report = build_report(
+        document,
+        source_trajectory_hash="a" * 64,
+        mode="simulation_report",
+        experiment_id="pytest-synthetic",
+        checkpoint_hashes={"pytest-synthetic": "b" * 64},
+    )
+
+    with psycopg.connect(conninfo) as conn:
+        ensure_schema(conn)
+        before = conn.execute(
+            "SELECT count(*) FROM steps s JOIN episodes e ON e.id=s.episode_id "
+            "WHERE e.experiment_id=%s",
+            (logger.experiment_id,),
+        ).fetchone()[0]
+        store = ReportStore(conn)
+        assert store.save(report) == report.report_id
+        assert store.save(report) == report.report_id
+        reconstructed = store.load(report.report_id)
+        fact_count = conn.execute(
+            "SELECT count(*) FROM attack_path_report_facts WHERE report_id=%s",
+            (report.report_id,),
+        ).fetchone()[0]
+        criticality_count = conn.execute(
+            "SELECT count(*) FROM attack_path_report_criticalities WHERE report_id=%s",
+            (report.report_id,),
+        ).fetchone()[0]
+        after = conn.execute(
+            "SELECT count(*) FROM steps s JOIN episodes e ON e.id=s.episode_id "
+            "WHERE e.experiment_id=%s",
+            (logger.experiment_id,),
+        ).fetchone()[0]
+        gui_reports = Repository().attack_path_reports()
+        conn.execute("DELETE FROM attack_path_reports WHERE report_id=%s", (report.report_id,))
+        conn.commit()
+
+    assert reconstructed == report.to_dict()
+    assert fact_count == len(report.facts)
+    assert criticality_count == len(report.observed_path_criticality)
+    assert any(item["report_id"] == report.report_id for item in gui_reports)
+    assert before == after == 1
+
+
+def test_evaluation_run_attaches_to_training_experiment(
+    logger: EpisodeLogger, conninfo: str
+) -> None:
+    logger.log_episode(make_episode(0))
+    logger.flush()
+    with EpisodeLogger.start(
+        name="pytest-synthetic",
+        reward_mode="shaped",
+        config_hash="cfg-deadbeef",
+        topology_config_hash="topo-cafe",
+        cve_manifest_sha256="manifest-1234",
+        seed_set=[42],
+        conninfo=conninfo,
+        designation="evaluation",
+        evaluation_seeds=[1001],
+        checkpoint_path="runs/model.zip",
+        experiment_id=logger.experiment_id,
+        batch_size=1,
+    ) as evaluation:
+        record = make_episode(0)
+        record.seed = 1001
+        evaluation.log_episode(record)
+
+    with psycopg.connect(conninfo) as conn:
+        rows = conn.execute(
+            """
+            SELECT r.designation, r.status, r.evaluation_seeds, ep.seed,
+                   ep.terminal_state, count(s.id)
+            FROM runs r
+            JOIN episodes ep ON ep.run_id = r.id
+            JOIN steps s ON s.episode_id = ep.id
+            WHERE r.experiment_id = %s
+            GROUP BY r.id, ep.id
+            ORDER BY r.designation DESC
+            """,
+            (logger.experiment_id,),
+        ).fetchall()
+
+    assert rows[0][:5] == ("training", "running", [], 42, "goal")
+    assert rows[1][:5] == ("evaluation", "complete", [1001], 1001, "goal")
+    assert rows[1][5] == 3
+
+
+def test_phase15_report_round_trips_without_mutating_raw_or_phase14_tables(
+    conninfo: str,
+) -> None:
+    report = make_mitigation_report()
+    with psycopg.connect(conninfo) as conn:
+        ensure_schema(conn)
+        before = conn.execute(
+            "SELECT (SELECT count(*) FROM episodes), (SELECT count(*) FROM steps), "
+            "(SELECT count(*) FROM attack_path_reports)"
+        ).fetchone()
+        store = MitigationStore(conn)
+        assert store.save(report) == report["report_id"]
+        assert store.save(report) == report["report_id"]
+        reconstructed = store.load(report["report_id"])
+        pair_count = conn.execute(
+            "SELECT count(*) FROM mitigation_counterfactual_pairs WHERE report_id=%s",
+            (report["report_id"],),
+        ).fetchone()[0]
+        gui_reports = Repository().mitigation_counterfactual_reports()
+        after = conn.execute(
+            "SELECT (SELECT count(*) FROM episodes), (SELECT count(*) FROM steps), "
+            "(SELECT count(*) FROM attack_path_reports)"
+        ).fetchone()
+        conn.execute(
+            "DELETE FROM mitigation_counterfactual_reports WHERE report_id=%s",
+            (report["report_id"],),
+        )
+        conn.commit()
+
+    assert reconstructed == report
+    assert pair_count == len(report["pairs"])
+    assert any(item["report_id"] == report["report_id"] for item in gui_reports)
+    assert before == after
+
+
 def test_batching_defers_writes_until_threshold(logger: EpisodeLogger) -> None:
     logger.log_episode(make_episode(0))
     assert logger.episode_count() == 0, "should still be buffered"
@@ -157,12 +435,18 @@ def test_flush_on_close_loses_nothing(conninfo: str) -> None:
         assert instance.episode_count() == 0
 
     with psycopg.connect(conninfo) as conn:
-        count = conn.execute(
-            "SELECT count(*) FROM episodes WHERE experiment_id = %s", (experiment_id,)
-        ).fetchone()[0]
+        count, status = conn.execute(
+            """
+            SELECT count(ep.id), max(r.status)
+            FROM runs r LEFT JOIN episodes ep ON ep.run_id = r.id
+            WHERE r.experiment_id = %s
+            """,
+            (experiment_id,),
+        ).fetchone()
         conn.execute("DELETE FROM experiments WHERE id = %s", (experiment_id,))
         conn.commit()
     assert count == 1, "context manager exit must flush"
+    assert status == "complete"
 
 
 def test_duplicate_episode_index_is_rejected(logger: EpisodeLogger) -> None:
@@ -227,16 +511,24 @@ def test_training_run_writes_consistent_rows(conninfo: str) -> None:
 
     configs = Path(__file__).resolve().parents[1] / "configs"
     args = train_module.parse_args(
-        ["--seed", "42", "--timesteps", "2048",
-         "--reward-config", str(configs / "shaped.yaml"),
-         "--postgres", "--log-steps"]
+        [
+            "--seed",
+            "42",
+            "--timesteps",
+            "2048",
+            "--reward-config",
+            str(configs / "shaped.yaml"),
+            "--postgres",
+            "--log-steps",
+        ]
     )
     report = train_module.train(args)
     reported = report["episodes"]
 
     with psycopg.connect(conninfo) as conn:
         experiment = conn.execute(
-            "SELECT id, config_hash, topology_config_hash, cve_manifest_sha256 "
+            "SELECT id, config_hash, topology_config_hash, topology_hash, "
+            "cve_manifest_sha256 "
             "FROM experiments ORDER BY id DESC LIMIT 1"
         ).fetchone()
         experiment_id = experiment[0]
@@ -246,7 +538,8 @@ def test_training_run_writes_consistent_rows(conninfo: str) -> None:
         ).fetchone()[0]
         steps = conn.execute(
             "SELECT count(*) FROM steps s JOIN episodes e ON e.id = s.episode_id "
-            "WHERE e.experiment_id = %s", (experiment_id,)
+            "WHERE e.experiment_id = %s",
+            (experiment_id,),
         ).fetchone()[0]
         step_sum = conn.execute(
             "SELECT coalesce(sum(length),0) FROM episodes WHERE experiment_id = %s",
@@ -264,7 +557,8 @@ def test_training_run_writes_consistent_rows(conninfo: str) -> None:
         # Test 14, checked at the storage layer as well as the snapshot file.
         assert experiment[1] == RewardConfig.from_yaml(configs / "shaped.yaml").hash()
         assert experiment[2] == TopologyConfig.from_yaml().config_hash()
-        assert experiment[3] == digest(CVECatalogue.open_default())
+        assert experiment[3] == "f875a25adf37ee34"
+        assert experiment[4] == digest(CVECatalogue.open_default())
     finally:
         with psycopg.connect(conninfo) as conn:
             conn.execute("DELETE FROM experiments WHERE id = %s", (experiment_id,))

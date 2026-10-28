@@ -5,13 +5,17 @@ Pure-logic tests: no training, no database, no display.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from rlredteam import provenance as prov
 from rlredteam.analyse import (
+    analyse,
     assess_convergence,
+    format_table,
     load_protocol,
     metrics_for_run,
     paired_comparison,
@@ -51,9 +55,9 @@ def test_valid_record_is_accepted() -> None:
         ("base_score", -1.0),
         ("base_score", "not a number"),
         ("base_severity", "SEVERE"),
-        ("base_severity", "LOW"),          # disagrees with 9.8
+        ("base_severity", "LOW"),  # disagrees with 9.8
         ("kind", "something-else"),
-        ("cvss_version", "3.0"),           # disagrees with the vector prefix
+        ("cvss_version", "3.0"),  # disagrees with the vector prefix
         ("vector", "CVSS:3.1/AV:X/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"),
         ("source_url", "https://example.com/other"),
     ],
@@ -77,11 +81,13 @@ def test_committed_catalogue_passes_validation() -> None:
     for record in CVECatalogue.open_default().all_records():
         validate_record(
             {
-                "cve_id": record.cve_id, "kind": record.kind,
+                "cve_id": record.cve_id,
+                "kind": record.kind,
                 "cvss_version": record.cvss_version,
                 "base_score": record.base_score,
                 "base_severity": record.base_severity,
-                "vector": record.vector, "source_url": record.source_url,
+                "vector": record.vector,
+                "source_url": record.source_url,
             }
         )
 
@@ -94,10 +100,15 @@ def described(**overrides) -> dict:
         "subnets": [1, 1, 1, 5, 1],
         "topology": [[1, 1, 0], [1, 1, 1], [0, 1, 1]],
         "hosts": [[1, 0], [2, 0]],
-        "services": ["a", "b"], "os": ["linux"], "processes": ["p"],
-        "exploits": ["e_0"], "privescs": ["pe_0"],
-        "sensitive_hosts": {"(2, 0)": 100.0}, "step_limit": 1000,
-        "observation_space": [234], "action_space_n": 120,
+        "services": ["a", "b"],
+        "os": ["linux"],
+        "processes": ["p"],
+        "exploits": ["e_0"],
+        "privescs": ["pe_0"],
+        "sensitive_hosts": {"(2, 0)": 100.0},
+        "step_limit": 1000,
+        "observation_space": [234],
+        "action_space_n": 120,
     }
     base.update(overrides)
     return base
@@ -138,13 +149,23 @@ def test_environment_hash_ignores_network_details() -> None:
 
 def manifest(**overrides) -> prov.ExperimentManifest:
     base = dict(
-        experiment_id="shaped-s42-t42", git_commit="abc123", git_dirty=False,
-        python_version="3.11.15", dependency_lock_hash="lock",
-        docker_image_digest="", training_seed=42, topology_seed=42,
-        topology_hash="topo", topology_config_hash="cfg",
-        environment_config_hash="env", cve_database_hash="cve",
-        reward_config_hash="rew", ppo_config_hash="ppo", dataset_version="16",
-        training_budget=200_000, ppo_config={"n_steps": 2048},
+        experiment_id="shaped-s42-t42",
+        git_commit="abc123",
+        git_dirty=False,
+        python_version="3.11.15",
+        dependency_lock_hash="lock",
+        docker_image_digest="",
+        training_seed=42,
+        topology_seed=42,
+        topology_hash="topo",
+        topology_config_hash="cfg",
+        environment_config_hash="env",
+        cve_manifest_sha256="cve",
+        reward_config_hash="rew",
+        ppo_config_hash="ppo",
+        dataset_version="16",
+        training_budget=200_000,
+        ppo_config={"n_steps": 2048},
     )
     base.update(overrides)
     return prov.ExperimentManifest(**base)
@@ -154,6 +175,17 @@ def test_gate_passes_a_well_formed_run(monkeypatch) -> None:
     monkeypatch.setenv("POSTGRES_PASSWORD", "x")
     monkeypatch.setattr(prov, "_internet_reachable", lambda timeout=1.5: False)
     assert prov.run_gate(manifest()).passed
+
+
+@pytest.mark.parametrize("declared", ["", "unknown", "unexpected"])
+def test_unknown_declared_git_state_is_not_treated_as_clean(monkeypatch, declared) -> None:
+    monkeypatch.setenv("RLREDTEAM_GIT_DIRTY", declared)
+    monkeypatch.setattr(
+        prov.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=1, stdout=""),
+    )
+    assert prov.git_dirty() is None
 
 
 def test_gate_stops_on_a_frozen_hash_mismatch(monkeypatch) -> None:
@@ -233,9 +265,13 @@ def protocol() -> dict:
 def episodes_from(values: list[float]) -> list[dict]:
     return [
         {
-            "native_return": v, "shaped_return": v, "length": 100,
-            "goal_reached": True, "mean_cvss_exploited": 8.0,
-            "max_cvss_exploited": 9.5, "hosts_compromised": 3,
+            "native_return": v,
+            "shaped_return": v,
+            "length": 100,
+            "goal_reached": True,
+            "mean_cvss_exploited": 8.0,
+            "max_cvss_exploited": 9.5,
+            "hosts_compromised": 3,
         }
         for v in values
     ]
@@ -279,6 +315,159 @@ def test_convergence_reports_its_criterion(protocol: dict) -> None:
     claim someone else can check."""
     _, detail = assess_convergence(episodes_from([-500.0] * 60), protocol)
     assert "criterion" in detail and "checks" in detail
+
+
+def test_block_mean_stability_tolerates_irreducible_episode_noise(protocol: dict) -> None:
+    amended = dict(protocol)
+    amended["convergence"] = {
+        "method": "block_means_v2",
+        "window": 1.0,
+        "min_episodes": 100,
+        "blocks": 4,
+        "return_scale_floor": 100.0,
+        "max_block_mean_relative_range": 0.35,
+        "max_abs_normalised_block_slope": 0.10,
+        "max_half_window_change": 0.15,
+    }
+    # Individual episodes have very high variance, but every consecutive block
+    # has the same mean. That is a stable learning curve, not policy drift.
+    values = [-300.0, 100.0] * 52
+
+    converged, detail = assess_convergence(episodes_from(values), amended)
+
+    assert converged
+    assert detail["raw_relative_std_diagnostic"] > 1.0
+    assert detail["block_means"] == [-100.0] * 4
+
+
+def test_block_mean_stability_rejects_continuing_improvement(protocol: dict) -> None:
+    amended = dict(protocol)
+    amended["convergence"] = {
+        "method": "block_means_v2",
+        "window": 1.0,
+        "min_episodes": 100,
+        "blocks": 4,
+        "return_scale_floor": 100.0,
+        "max_block_mean_relative_range": 0.35,
+        "max_abs_normalised_block_slope": 0.10,
+        "max_half_window_change": 0.15,
+    }
+
+    converged, detail = assess_convergence(
+        episodes_from([-500.0 + 4.0 * index for index in range(100)]), amended
+    )
+
+    assert not converged
+    assert not detail["checks"]["block_trend_within_threshold"]
+
+
+def test_unknown_convergence_method_fails_closed(protocol: dict) -> None:
+    invalid = dict(protocol)
+    invalid["convergence"] = {"method": "invented"}
+
+    with pytest.raises(ValueError, match="unsupported convergence method"):
+        assess_convergence(episodes_from([-100.0] * 100), invalid)
+
+
+def test_convergence_amendment_changes_only_the_stability_rule(protocol: dict) -> None:
+    amended = load_protocol(REPO_ROOT / "configs" / "metrics_convergence_amendment.yaml")
+    original_without_convergence = {
+        key: value for key, value in protocol.items() if key != "convergence"
+    }
+    amended_without_convergence = {
+        key: value for key, value in amended.items() if key != "convergence"
+    }
+
+    assert amended_without_convergence == original_without_convergence
+    assert amended["convergence"]["method"] == "block_means_v2"
+
+
+def test_pilot_protocol_changes_only_declared_seed_sets() -> None:
+    final = load_protocol(REPO_ROOT / "configs" / "metrics_convergence_amendment.yaml")
+    pilot = load_protocol(REPO_ROOT / "configs" / "metrics_convergence_pilot.yaml")
+    final_evaluation = final.pop("evaluation")
+    pilot_evaluation = pilot.pop("evaluation")
+
+    assert pilot == final
+    assert pilot_evaluation | {
+        "seeds": final_evaluation["seeds"],
+        "episode_seeds": final_evaluation["episode_seeds"],
+    } == final_evaluation
+
+
+def test_optimizer_pilot_protocol_changes_only_declared_seed_sets() -> None:
+    final = load_protocol(REPO_ROOT / "configs" / "metrics_convergence_amendment.yaml")
+    pilot = load_protocol(REPO_ROOT / "configs" / "metrics_optimizer_pilot.yaml")
+    final_evaluation = final.pop("evaluation")
+    pilot_evaluation = pilot.pop("evaluation")
+
+    assert pilot == final
+    assert pilot_evaluation | {
+        "seeds": final_evaluation["seeds"],
+        "episode_seeds": final_evaluation["episode_seeds"],
+    } == final_evaluation
+
+
+def test_fixed_budget_protocol_adds_only_a_prospective_design() -> None:
+    amended = load_protocol(REPO_ROOT / "configs" / "metrics_convergence_amendment.yaml")
+    fixed_budget = load_protocol(REPO_ROOT / "configs" / "metrics_fixed_budget.yaml")
+    design = fixed_budget.pop("design")
+
+    assert fixed_budget == amended
+    assert design["protocol_version"] == "fixed_budget_v1"
+    assert design["analysis_population"] == "all_completed_planned_runs"
+    assert design["convergence_role"] == "diagnostic_only"
+    assert design["prior_lower_budget_exposure"] == "disclosed"
+
+
+def test_fixed_budget_design_rejects_convergence_filtering(tmp_path: Path) -> None:
+    source = (REPO_ROOT / "configs" / "metrics_fixed_budget.yaml").read_text()
+    invalid = tmp_path / "metrics.yaml"
+    invalid.write_text(source.replace("diagnostic_only", "exclude_failed_runs"))
+
+    with pytest.raises(ValueError, match="invalid fixed-budget design"):
+        load_protocol(invalid)
+
+
+def test_fixed_budget_analysis_retains_non_stable_completed_runs() -> None:
+    fixed_budget = load_protocol(REPO_ROOT / "configs" / "metrics_fixed_budget.yaml")
+    runs = []
+    for seed in (42, 43):
+        offset = seed - 42
+        for arm, value in (
+            ("sparse", -10.0 - offset),
+            ("shaped", 20.0 + 2 * offset),
+        ):
+            runs.append(
+                metrics_for_run(
+                    f"{arm}-{seed}",
+                    arm,
+                    seed,
+                    42,
+                    episodes_from([value] * 10),
+                    fixed_budget,
+                    training_episodes=episodes_from(
+                        [-500.0 + 4.0 * index for index in range(100)]
+                    ),
+                )
+            )
+    fixed_budget["evaluation"]["seeds"] = [42, 43]
+
+    report = analyse(runs, fixed_budget)
+
+    assert len(report["not_converged"]) == 4
+    assert report["comparisons"][0]["n_pairs"] == 2
+    assert report["fixed_budget_interpretation"] == {
+        "protocol_version": "fixed_budget_v1",
+        "estimand": "frozen_policy_performance_after_fixed_training_budget",
+        "unit_of_analysis": "training_seed",
+        "analysis_population": "all_completed_planned_runs",
+        "convergence_role": "diagnostic_only",
+        "all_planned_pairs_present": True,
+        "training_stability_warning": True,
+        "status": "complete_with_training_stability_warning",
+    }
+    assert "TRAINING STABILITY WARNING (diagnostic" in format_table(report)
 
 
 # -- CP-27/28 metrics and statistics ----------------------------------------
@@ -326,6 +515,22 @@ def test_constant_difference_reports_no_effect_size(protocol: dict) -> None:
     result = paired_comparison("native_return", a, b, protocol)
     assert result.difference == pytest.approx(1.0)
     assert result.cohens_d is None
+    assert result.t_statistic is None
+    assert result.p_value is None
+    assert result.p_bonferroni is None
+    assert not result.significant
+    assert result.assumption_warning is not None
+
+
+def test_identical_pairs_report_no_observed_difference(protocol: dict) -> None:
+    a = {42: 1.0, 43: 2.0, 44: 3.0}
+    result = paired_comparison("native_return", a, a, protocol)
+    assert result.difference == pytest.approx(0.0)
+    assert result.t_statistic == pytest.approx(0.0)
+    assert result.p_value == pytest.approx(1.0)
+    assert result.p_bonferroni == pytest.approx(1.0)
+    assert result.cohens_d is None
+    assert not result.significant
 
 
 def test_unpaired_seeds_are_dropped_not_compared(protocol: dict) -> None:
@@ -339,7 +544,18 @@ def test_unpaired_seeds_are_dropped_not_compared(protocol: dict) -> None:
 def test_comparison_survives_a_single_pair(protocol: dict) -> None:
     result = paired_comparison("native_return", {42: 1.0}, {42: 2.0}, protocol)
     assert result.n_pairs == 1
+    assert result.difference == pytest.approx(1.0)
     assert result.p_value is None
+    json.dumps(result.to_dict(), allow_nan=False)
+
+
+def test_comparison_without_pairs_is_strict_json(protocol: dict) -> None:
+    result = paired_comparison("native_return", {42: 1.0}, {43: 2.0}, protocol)
+    assert result.n_pairs == 0
+    assert result.mean_a is None
+    assert result.mean_b is None
+    assert result.difference is None
+    json.dumps(result.to_dict(), allow_nan=False)
 
 
 def test_bonferroni_applies_only_to_primary_metrics(protocol: dict) -> None:
@@ -359,3 +575,19 @@ def test_protocol_pins_stochastic_native_evaluation(protocol: dict) -> None:
     assert protocol["evaluation"]["action_selection"] == "stochastic"
     assert protocol["evaluation"]["reward_scale"] == "native"
     assert protocol["evaluation"]["seeds"] == list(range(42, 52))
+    assert protocol["evaluation"]["episode_seeds"] == list(range(1001, 1011))
+
+
+def test_convergence_uses_training_rows_not_evaluation_rows(protocol: dict) -> None:
+    evaluation = episodes_from([-500.0] * 10)
+    training = episodes_from([-2000.0 + 30 * index for index in range(60)])
+    metrics = metrics_for_run(
+        "r",
+        "shaped",
+        42,
+        42,
+        evaluation,
+        protocol,
+        training_episodes=training,
+    )
+    assert not metrics.converged

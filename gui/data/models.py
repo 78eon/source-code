@@ -12,6 +12,159 @@ from datetime import datetime
 
 
 @dataclass(frozen=True, slots=True)
+class ScenarioSummary:
+    title: str = "Not yet available"
+    simulator: str = "Not yet available"
+    topology_seed: int | None = None
+    reward_mode: str = "Not yet available"
+    training_seed: int | None = None
+    host_count: int | None = None
+    subnet_count: int | None = None
+    crown_jewels: tuple[str, ...] = ()
+    catalogue: str = "Not yet available"
+    provenance: tuple[tuple[str, str], ...] = ()
+    # Analyst-only DTO. Never accepted by knowledge/observation conversion.
+    true_nodes: tuple[dict, ...] = ()
+    true_edges: tuple[dict, ...] = ()
+    status: str = "Not yet available"
+
+
+@dataclass(frozen=True, slots=True)
+class AgentKnowledgeView:
+    nodes: tuple[dict, ...] = ()
+    edges: tuple[dict, ...] = ()
+    services: tuple[str, ...] = ()
+    vulnerabilities: tuple[str, ...] = ()
+    credentials: tuple[str, ...] = ()
+    available_actions: tuple[str, ...] = ()
+    status: str = "Not yet available: no recorded knowledge snapshot"
+
+
+@dataclass(frozen=True, slots=True)
+class CurrentActionView:
+    step: int = 0
+    kind: str = "Unknown"
+    name: str = "Unknown"
+    target: str = "Unknown"
+    cve: str = "Unknown"
+    cvss: float | None = None
+    mitre: tuple[str, ...] = ()
+    native_reward: float | None = None
+    shaped_reward: float | None = None
+    recorded_reward: float | None = None
+    breakdown: tuple[tuple[str, float], ...] = ()
+    success: bool | None = None
+    access_gained: str = "Unknown"
+    newly_discovered: int | None = None
+    knowledge_delta: str = "Unknown: not recorded"
+    source: str = "Not yet available"
+
+
+@dataclass(frozen=True, slots=True)
+class AttackTimelineEntry:
+    action: CurrentActionView = field(default_factory=CurrentActionView)
+    before: AgentKnowledgeView = field(default_factory=AgentKnowledgeView)
+    after: AgentKnowledgeView = field(default_factory=AgentKnowledgeView)
+    crown_jewel: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ExperimentReport:
+    title: str = "Not yet available"
+    outcome: str = "Not yet available"
+    scope: str = "Simulation report — no live-network evidence"
+    metrics: tuple[tuple[str, str], ...] = ()
+    provenance: tuple[tuple[str, str], ...] = ()
+    limitation: str = "Discovery-derived baseline metrics are withheld from scientific comparison."
+
+
+@dataclass(frozen=True, slots=True)
+class AttackTrajectorySummary:
+    title: str = "No episode selected"
+    entries: tuple[AttackTimelineEntry, ...] = ()
+    report: ExperimentReport = field(default_factory=ExperimentReport)
+    status: str = "Not yet available"
+    # Replay contains only event-derived data, never a true-topology field.
+
+
+@dataclass(frozen=True, slots=True)
+class ExperimentComparisonRow:
+    metric: str
+    experiment_a: str
+    experiment_b: str
+    value_a: float | None
+    value_b: float | None
+    difference: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class ComparisonOption:
+    label: str
+    cohort: str
+    metrics: tuple[tuple[str, float | None], ...]
+    basis: str
+
+
+@dataclass(frozen=True, slots=True)
+class ResearchEvidenceSummary:
+    status: str = "Not yet available"
+    diagnostics: tuple[tuple[int, tuple[dict, ...]], ...] = ()
+    convergence: tuple[tuple[str, str, str], ...] = ()
+    images: tuple[tuple[str, bytes], ...] = ()
+    criterion: str = "Not yet available"
+
+
+@dataclass(frozen=True, slots=True)
+class WorkspaceEvidence:
+    scenario: ScenarioSummary = field(default_factory=ScenarioSummary)
+    research: ResearchEvidenceSummary = field(default_factory=ResearchEvidenceSummary)
+    episode_choices: tuple[tuple[str, str, int, int], ...] = ()
+    comparisons: tuple[ComparisonOption, ...] = ()
+    status: str = "Not yet available"
+
+
+@dataclass(frozen=True, slots=True)
+class DefectAuditSummary:
+    affected_scan_count: int | None = None
+    affected_reward: float | None = None
+    total_positive_reward: float | None = None
+    affected_share_pct: float | None = None
+    tactic_share_pct: float | None = None
+    interpretation: str = "Audit evidence not yet available."
+    evidence_available: bool = False
+    source: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class ConfirmatoryComparisonRow:
+    arm: str
+    metric: str
+    frozen: float | None
+    corrected: float | None
+    corrected_minus_frozen: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class ConfirmatoryStudySummary:
+    study_id: str = "Not yet available"
+    stage: str = "Not yet available"
+    training_seeds: tuple[int, ...] = ()
+    evaluation_seeds: tuple[int, ...] = ()
+    total_timesteps: int | None = None
+    registered: bool = False
+    corrected_commit: str = "Not yet available"
+    parent_commit: str = "Not yet available"
+    completed_training_seeds: tuple[int, ...] = ()
+    convergence_status: str = "Not yet available"
+    evaluation_status: str = "Not yet available"
+    comparison_available: bool = False
+    comparison_path: str = ""
+    status_message: str = "Confirmatory evidence not yet available."
+    comparisons: tuple[ConfirmatoryComparisonRow, ...] = ()
+    audit: DefectAuditSummary = field(default_factory=DefectAuditSummary)
+
+
+@dataclass(frozen=True, slots=True)
 class RunSummary:
     """One row of the Runs table."""
 
@@ -81,9 +234,19 @@ class StepRow:
     native_reward: float
     cve_id: str | None
     cvss_base: float | None
+    target_entity: str | None = None
+    state_changed: bool = False
+    prerequisites: list[str] = field(default_factory=list)
+    outcomes: list[str] = field(default_factory=list)
+    rl_action_index: int | None = None
+    simulator_action: str | None = None
+    framework_mappings: list[dict[str, str]] = field(default_factory=list)
+    mapping_persisted: bool = False
 
     @property
-    def target(self) -> tuple[int, int] | None:
+    def target(self) -> str | tuple[int, int] | None:
+        if self.target_entity:
+            return self.target_entity
         if self.target_subnet is None or self.target_host is None:
             return None
         return (self.target_subnet, self.target_host)
@@ -175,3 +338,42 @@ class TopologyView:
             if len(digits) == 2:
                 out.add((digits[0], digits[1]))
         return out
+
+
+@dataclass(frozen=True, slots=True)
+class StudyMetric:
+    """One paired comparison from a canonical research analysis."""
+
+    name: str
+    arm_a_mean: float | None
+    arm_b_mean: float | None
+    difference: float | None
+    p_value: float | None
+    p_adjusted: float | None
+    effect_size: float | None
+    significant: bool
+    primary: bool
+    warning: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class StudySummary:
+    """Small, presentation-safe view of one local canonical study package."""
+
+    phase: int
+    study_id: str
+    title: str
+    arm_a: str
+    arm_b: str
+    complete: bool
+    outcome: str
+    code_commit: str
+    config_hash: str
+    result_path: str
+    training_seeds: int
+    evaluation_episodes: int
+    metrics: list[StudyMetric] = field(default_factory=list)
+
+    @property
+    def primary_metrics(self) -> list[StudyMetric]:
+        return [metric for metric in self.metrics if metric.primary]

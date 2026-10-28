@@ -57,8 +57,9 @@ class AttackEvent:
     step: int
     kind: ActionKind
     action_name: str
-    target: tuple[int, int] | None
+    target: str | tuple[int, int] | None
     success: bool
+    rl_action_index: int | None = None
 
     # Taken verbatim from the environment, always logged so results can also be
     # reported in native NASim units even when training on the shaped reward.
@@ -95,6 +96,6 @@ class AttackEvent:
         return False
 
     @property
-    def dedup_key(self) -> tuple[str, tuple[int, int] | None]:
+    def dedup_key(self) -> tuple[str, str | tuple[int, int] | None]:
         """Identity used for first-informative-success accounting."""
         return (self.action_name, self.target)

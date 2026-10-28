@@ -3,6 +3,12 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Package indexes can be slow on the university/home link. Keep retries
+# bounded but long enough that reproducible image builds do not fail halfway
+# through a wheel download.
+ENV PIP_DEFAULT_TIMEOUT=120 \
+    PIP_RETRIES=5
+
 # tk is required by nasim's matplotlib-backed renderer; git for provenance stamping.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential git tk \
@@ -26,7 +32,8 @@ COPY tests ./tests
 # as root means a bug in the environment writes with root authority on every
 # bind mount.
 RUN useradd --uid 10001 --create-home --shell /usr/sbin/nologin rlredteam \
-    && mkdir -p /app/runs && chown -R 10001:10001 /app/runs \
+    && mkdir -p /app/runs /app/results \
+    && chown -R 10001:10001 /app/runs /app/results \
     # /app is bind-mounted from the host and so is owned by a different uid than
     # the one this image runs as. Git refuses to read a repository it considers
     # foreign ("dubious ownership"), which would silently strip commit

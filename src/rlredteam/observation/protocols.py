@@ -1,0 +1,50 @@
+"""Declarations only: none of these capabilities acquires live data."""
+
+from enum import StrEnum
+
+
+class ObservationMode(StrEnum):
+    FIXTURE = "FIXTURE"
+    OFFLINE_IMPORT = "OFFLINE_IMPORT"
+    MANUAL = "MANUAL"
+    LIVE_LAB = "LIVE_LAB"
+    LOOPBACK_TEST = "LOOPBACK_TEST"
+
+
+class Capability(StrEnum):
+    INTERFACE_INVENTORY = "INTERFACE_INVENTORY"
+    ROUTE_INVENTORY = "ROUTE_INVENTORY"
+    ARP_OBSERVATION = "ARP_OBSERVATION"
+    NEIGHBOUR_OBSERVATION = "NEIGHBOUR_OBSERVATION"
+    HOST_REACHABILITY = "HOST_REACHABILITY"
+    TCP_SERVICE_OBSERVATION = "TCP_SERVICE_OBSERVATION"
+    UDP_SERVICE_OBSERVATION = "UDP_SERVICE_OBSERVATION"
+    TLS_METADATA = "TLS_METADATA"
+    HTTP_METADATA = "HTTP_METADATA"
+    SERVICE_BANNER = "SERVICE_BANNER"
+    HOSTNAME_OBSERVATION = "HOSTNAME_OBSERVATION"
+    ADDRESS_OBSERVATION = "ADDRESS_OBSERVATION"
+    DEVICE_HINT = "DEVICE_HINT"
+    OPERATING_SYSTEM_HINT = "OPERATING_SYSTEM_HINT"
+    SOFTWARE_HINT = "SOFTWARE_HINT"
+    NETWORK_SEGMENT_HINT = "NETWORK_SEGMENT_HINT"
+
+
+class LiveObservationDisabledError(ValueError):
+    """Network activation is denied unless every required gate passes."""
+
+
+class AuthorizationRequiredError(LiveObservationDisabledError):
+    pass
+
+
+class OutOfScopeTargetError(LiveObservationDisabledError):
+    pass
+
+
+class CapabilityDeniedError(LiveObservationDisabledError):
+    pass
+
+
+class ObservationBudgetExceededError(LiveObservationDisabledError):
+    pass

@@ -1,0 +1,12 @@
+FROM docker.io/library/node:22-bookworm AS node
+FROM docker.io/library/rust:1.90-bookworm
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
+RUN apt-get update && apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf xvfb xauth dbus-x11 fonts-dejavu && rm -rf /var/lib/apt/lists/*
+ENV CARGO_BUILD_JOBS=2
+RUN apt-get update && apt-get install -y --no-install-recommends python3-venv chromium && rm -rf /var/lib/apt/lists/*
+COPY requirements-runtime.txt /tmp/requirements-runtime.txt
+RUN python3 -m venv /opt/analyst-python && /opt/analyst-python/bin/pip install --no-cache-dir -r /tmp/requirements-runtime.txt
+ENV SECURITY_RL_BACKEND_PYTHON=/opt/analyst-python/bin/python PYTHONPATH=/app/src PYTHONDONTWRITEBYTECODE=1
+WORKDIR /app/desktop

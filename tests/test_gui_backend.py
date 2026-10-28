@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from gui.backend import ApplicationBackend
-from gui.data.repository import RepositoryError
+from rlredteam.application.backend import ApplicationBackend
+from rlredteam.application.data.repository import RepositoryError
 
 
 class FakeRepository:
@@ -118,14 +118,14 @@ def test_backend_rejects_configuration_without_a_real_service() -> None:
 
 
 def test_backend_exports_latest_canonical_analysis_artifact(tmp_path, monkeypatch) -> None:
-    from gui.data.baseline import BaselineData
+    from rlredteam.application.data.baseline import BaselineData
 
     monkeypatch.setattr(ApplicationBackend, "load_baseline", lambda self: BaselineData())
     table = tmp_path / "tables" / "statistics.csv"
     table.parent.mkdir()
     table.write_text("metric,p_value\n")
     monkeypatch.setattr(
-        "gui.backend.load_studies",
+        "rlredteam.application.backend.load_studies",
         lambda: [SimpleNamespace(result_path=str(tmp_path))],
     )
 
@@ -157,8 +157,8 @@ def test_database_campaigns_take_precedence_over_duplicate_artifacts() -> None:
 
 
 def test_dashboard_explicitly_reports_database_degradation(monkeypatch) -> None:
-    monkeypatch.setattr("gui.backend.list_run_folders", lambda: [])
-    monkeypatch.setattr("gui.backend.load_studies", lambda: [])
+    monkeypatch.setattr("rlredteam.application.backend.list_run_folders", lambda: [])
+    monkeypatch.setattr("rlredteam.application.backend.load_studies", lambda: [])
 
     dashboard = ApplicationBackend(repository=FailingRepository()).load_dashboard()
 

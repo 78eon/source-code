@@ -6,7 +6,7 @@ from dataclasses import asdict, replace
 
 import pytest
 
-from gui.data.models import (
+from rlredteam.application.data.models import (
     AgentKnowledgeView,
     AttackTrajectorySummary,
     ComparisonOption,
@@ -15,7 +15,7 @@ from gui.data.models import (
     ScenarioSummary,
     WorkspaceEvidence,
 )
-from gui.data.workspace import (
+from rlredteam.application.data.workspace import (
     DIAGNOSTICS,
     METRICS,
     compare_options,
@@ -26,13 +26,6 @@ from gui.data.workspace import (
     timeline_entries,
 )
 
-
-@pytest.fixture
-def app():
-    pytest.importorskip("PySide6")
-    from PySide6.QtWidgets import QApplication
-
-    return QApplication.instance() or QApplication([])
 
 
 def events():
@@ -147,7 +140,7 @@ def test_malformed_or_missing_evidence_fails_safely(tmp_path):
 
 
 def test_frozen_episode_loader_binds_trace_to_reviewed_outcome(tmp_path, monkeypatch):
-    from gui.data import workspace as loader
+    from rlredteam.application.data import workspace as loader
 
     root = tmp_path
     frozen_path = root / loader.FROZEN
@@ -200,206 +193,3 @@ def test_comparison_excludes_discovery_and_requires_matching_cohort():
     rows = compare_options(a, b)
     assert len(rows) == 1 and rows[0].metric == "native_return" and rows[0].difference == 2.0
     assert compare_options(a, replace(b, cohort="other simulator")) == ()
-
-
-def test_scenario_true_and_knowledge_views_never_merge(app):
-    from gui.views.workspace import ScenarioPage
-
-    page = ScenarioPage()
-    page.set_scenario(
-        ScenarioSummary(
-            true_nodes=({"id": "known", "attributes": {"secret": "SECRET"}}, {"id": "hidden"}),
-            status="Recorded",
-        )
-    )
-    assert page.graph.node_count == 0
-    page.set_knowledge(trajectory().entries[0])
-    assert page.graph.node_count == 1
-    assert "SECRET" not in json.dumps(page.graph._nodes)
-    page.mode.setCurrentIndex(1)
-    assert page.graph.node_count == 2
-    assert "RESEARCH TRUE ENVIRONMENT VIEW" in page.banner.state.text()
-    page.mode.setCurrentIndex(0)
-    assert page.graph.node_count == 1 and "hidden" not in json.dumps(page.graph._nodes)
-    page.set_scenario(ScenarioSummary())
-    assert page.graph.node_count == 0  # no knowledge survives a scenario switch
-    page.close()
-
-
-def test_replay_empty_clickable_timeline_and_action_details(app):
-    from gui.views.workspace import ReplayWorkspace
-
-    page = ReplayWorkspace()
-    assert page.timeline.rowCount() == 0
-    page.set_trajectory(trajectory())
-    assert page.timeline.rowCount() == 2
-    page.timeline.setCurrentCell(1, 0)
-    app.processEvents()
-    text = "\n".join(
-        page.inspector.fields.item(i, 1).text() for i in range(page.inspector.fields.rowCount())
-    )
-    for value in ("CVE-2024-1234", "8.10", "T1210", "5.0000", "8.0000"):
-        assert value in text
-    assert page.knowledge_graph.node_count == 2
-    page.timeline.setCurrentCell(0, 0)
-    app.processEvents()
-    assert page.knowledge_graph.node_count == 1
-    page.set_trajectory(AttackTrajectorySummary())
-    assert page.knowledge_graph.node_count == 0 and page.inspector.fields.rowCount() == 0
-    page.close()
-
-
-def test_existing_demo_graph_does_not_render_hidden_attributes(app):
-    from gui.views.research_console import SimulationPage
-    from tests.test_gui_console import FakeBackend, simulation_result
-
-    result = simulation_result()
-    result.nodes[0]["attributes"] = {"undiscovered_cve": "SECRET"}
-    page = SimulationPage(FakeBackend(), lambda _: None)
-    page._completed(result)
-    page._render_step(1)
-    assert "SECRET" not in json.dumps(page.knowledge_graph._nodes)
-    assert "SECRET" in json.dumps(page.truth_graph._nodes)
-    scenario, trace = simulation_workspace(result)
-    assert "SECRET" not in json.dumps(asdict(trace))
-    assert "SECRET" in json.dumps(asdict(scenario))
-    page.close()
-
-
-def test_report_excludes_all_non_allowlisted_outcome_metrics(app):
-    from gui.views.workspace import OutcomePage
-
-    page = OutcomePage(lambda *_: None)
-    page.set_report(
-        ExperimentReport(
-            outcome="SUCCESS",
-            metrics=(
-                ("Native return", "15"),
-                ("discovered_hosts", "99"),
-                ("discovery coverage", "100%"),
-                ("Discovery-derived attack_path_length", "10"),
-            ),
-        )
-    )
-    assert page.metrics.rowCount() == 1
-    assert page.metrics.item(0, 0).text() == "Native return"
-    assert "withheld" in page.limitation.text()
-    page.close()
-
-
-def test_home_actions_follow_research_workflow_without_starting_a_run(app):
-    from PySide6.QtWidgets import QPushButton
-    from gui.views.workspace import HomePage
-
-    destinations = []
-    page = HomePage(destinations.append)
-    buttons = {button.text(): button for button in page.findChildren(QPushButton)}
-    for name, target in (
-        ("Open Scenario", 1),
-        ("Run / View Simulation", 2),
-        ("View Research Evidence", 5),
-    ):
-        buttons[name].click()
-        assert destinations[-1] == target
-    assert destinations == [1, 2, 5]
-    page.close()
-
-
-def test_research_diagnostics_and_tooltips_render_without_database(app):
-    from gui.views.workspace import HELP, DiagnosticsPage
-
-    page = DiagnosticsPage()
-    rows = tuple({"timesteps": t, **{k: t / 10 for k in DIAGNOSTICS}} for t in (10, 20))
-    page.set_evidence(
-        ResearchEvidenceSummary(
-            status="Synthetic persisted data",
-            diagnostics=((42, rows),),
-            convergence=(("42", "PASS", "Recorded"),),
-        )
-    )
-    assert page.seed.count() == 1 and page.values.rowCount() == 2
-    assert page.convergence.item(0, 1).text() == "PASS"
-    page.metric_selector.setCurrentText("approx_kl")
-    assert page.metric_selector.toolTip() == HELP["approx_kl"]
-    assert page.curve.points == [(10, 1.0), (20, 2.0)]
-    page.close()
-
-
-def test_comparison_view_never_renders_discovery_metrics(app):
-    from gui.views.workspace import ComparisonPage
-
-    page = ComparisonPage()
-    values = tuple((m, 1.0) for m in METRICS) + (("discovered_hosts", 999.0),)
-    page.set_options(
-        (
-            ComparisonOption("Frozen", "fixed", values, "Stored"),
-            ComparisonOption("Corrected", "fixed", values, "Stored"),
-        )
-    )
-    assert page.table.rowCount() == 5
-    assert {page.table.item(i, 0).text() for i in range(5)} == METRICS
-    page.close()
-
-
-def test_workspace_offline_and_stale_episode_load_is_discarded(app, monkeypatch):
-    from gui.views import research_console as console
-    from tests.test_gui_console import FakeBackend
-
-    pending = []
-
-    def deferred(fn, success, failure):
-        pending.append((fn, success, failure))
-
-    class Offline(FakeBackend):
-        def load_workspace(self):
-            return WorkspaceEvidence()
-
-        def load_workspace_episode(self, *args):
-            return trajectory()
-
-        def load_dashboard(self):
-            raise ConnectionError("No PostgreSQL")
-
-    monkeypatch.setattr(console, "run_async", deferred)
-    window = console.MainWindow(Offline())
-    assert len(window.workspace_pages) == 6
-    assert window.scenario.graph.node_count == 0
-    window.apply_workspace(
-        WorkspaceEvidence(
-            episode_choices=(("Seed 42", "shaped", 42, 1001), ("Seed 43", "shaped", 43, 1001))
-        )
-    )
-    first = pending[-1][1]
-    window.episode_selector.setCurrentIndex(1)
-    second = pending[-1][1]
-    second(replace(trajectory(), title="Current seed 43"))
-    first(replace(trajectory(), title="Stale seed 42"))
-    assert window.replay.data.title == "Current seed 43"
-    assert window.attack_replay.data.title == "Current seed 43"
-    window.navigate_to(5, "Compare Experiment")
-    assert window.stack.currentIndex() == 5 and window.research_section.tabs.currentIndex() == 3
-    window.close()
-
-
-def test_full_theme_renders_all_sections_without_overriding_qt_metric(app):
-    from gui import theme
-    from gui.views.main_window import MainWindow
-    from tests.test_gui_console import FakeBackend
-
-    original = app.styleSheet()
-    window = None
-    try:
-        app.setStyleSheet(theme.build_stylesheet())
-        window = MainWindow(FakeBackend())
-        window.show()
-        for i in range(6):
-            window.select_page(i)
-            app.processEvents()
-            assert not window.grab().isNull()
-        # QPaintDevice.metric is virtual: a combo box named self.metric caused
-        # a native crash during themed layout. Keep that Qt method callable.
-        assert callable(window.diagnostics.metric)
-    finally:
-        if window:
-            window.close()
-        app.setStyleSheet(original)

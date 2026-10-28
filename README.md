@@ -33,24 +33,20 @@ make infrastructure-eval      # frozen held-out evaluation for every profile
 make lab-build                # build isolated-range evidence collector
 make train                    # 50k-step PPO pilot on the shaped reward
 
-make gui-build                # build the desktop app image (once)
-make gui                      # launch the analyst desktop app
+make api-image desktop-image desktop-install  # separate presentation toolchains
+make api-dev                  # loopback API; requires SECURITY_RL_API_TOKEN
+make desktop-dev              # Tauri analyst desktop; requires DISPLAY/XAUTHORITY
 ```
 
-All installation, testing and application launch commands use Podman. No Python or Qt
-packages need to be installed on the host.
+All installation, testing and application launch commands use Podman. No Python,
+Node or Rust packages need to be installed on the host.
 
-The desktop console is backend-driven. It reads stored execution steps and experiments
-from PostgreSQL, run summaries and configuration snapshots from `runs/`, and the frozen
-CVE catalogue from SQLite. If PostgreSQL is unavailable it clearly switches to artefact
-mode. Completed runs are read-only: campaign controls and configuration writes are not
-shown until a real scheduler or configuration service exists.
-The Paths workspace reconstructs prerequisite-linked enterprise attack paths from
-PostgreSQL and replays them as a native Qt graph; it does not calculate an omniscient
-route from hidden topology.
-The Simulation workspace lets a demonstrator choose a configured enterprise profile and
-topology seed, runs the actual offline Python backend on a Qt worker, and displays the
-generated entities and trace-derived path. It does not enumerate nearby or real networks.
+The local desktop-development branch uses React/TypeScript inside Tauri, with a
+read-only FastAPI presentation layer. PostgreSQL supplies recorded causal facts;
+Neo4j supplies graph projections rendered by Sigma.js. It never falls back to fake
+data. Digital Twin persistence and simulation browsing remain explicitly unavailable
+until analyst readers are connected. See [desktop setup and limitations](desktop/README.md).
+Do not run registered campaigns from this development worktree.
 
 Random-topology and cross-profile protocols are enforced by their committed experiment
 configurations, manifests and tests; detailed research notes remain local.
@@ -283,7 +279,7 @@ src/rlredteam/
   mitigation.py       Phase 15 overlay, paired evaluation, statistics and provenance.
   phase15_completion.py Fail-closed counterfactual report verifier.
 
-gui/                 Native PySide6 research console — separate Podman image
+desktop/             React/TypeScript + Sigma.js analyst UI in a Tauri desktop shell
   backend.py         typed snapshot adapter for database and persisted artefacts
   data/              PostgreSQL repository + runs/ reader; no Qt imports
   workers/           QThreadPool queries and isolated Qt training facade

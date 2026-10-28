@@ -1,0 +1,11 @@
+# Desktop development runtime only. Does not alter the frozen training image.
+fastapi==0.115.12
+uvicorn==0.34.2
+httpx==0.28.1
+neo4j==5.28.5
+psycopg[binary]==3.2.3
+gymnasium==1.0.0
+numpy==2.1.3
+PyYAML==6.0.2
+keyring==25.6.0
+SecretStorage==3.3.3

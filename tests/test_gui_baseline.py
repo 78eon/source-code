@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from gui.data.baseline import PACKAGE, BaselineData, load_baseline
+from rlredteam.application.data.baseline import PACKAGE, BaselineData, load_baseline
 
 
 def digest(path):
@@ -213,133 +213,11 @@ def test_document_symlink_outside_root_not_available(evidence, tmp_path_factory)
 
 
 def test_backend_prefers_reviewed_statistics_and_rejects_invalid(evidence, monkeypatch):
-    from gui.backend import ApplicationBackend
+    from rlredteam.application.backend import ApplicationBackend
 
-    monkeypatch.setattr("gui.backend.REPO_ROOT", evidence)
+    monkeypatch.setattr("rlredteam.application.backend.REPO_ROOT", evidence)
     backend = ApplicationBackend()
     assert Path(backend.export_report()) == evidence / PACKAGE / "report/primary_statistics.csv"
     (evidence / PACKAGE / "report/reviewed_results.json").write_text("{}")
     with pytest.raises(ValueError, match="unavailable"):
         backend.export_report()
-
-
-def test_native_page_withholds_metrics_and_clears_stale_snapshot(evidence):
-    pytest.importorskip("PySide6")
-    from PySide6.QtWidgets import QApplication
-
-    from gui.views.baseline import BaselinePage
-
-    QApplication.instance() or QApplication([])
-    page = BaselinePage(lambda message: None)
-    page.apply_baseline(load_baseline(evidence))
-    assert page.pairs.value.text() == "2"
-    assert page.episodes.value.text() == "12"
-    assert page.outcomes.item(7, 1).text() == "WITHHELD"
-    assert page.statistics.rowCount() == 5
-    assert "Training reward" in page.warning.text()
-    page.apply_baseline(BaselineData(state="INVALID", detail="missing evidence"))
-    assert page.outcomes.rowCount() == page.statistics.rowCount() == page.training.rowCount() == 0
-    assert page.pairs.value.text() == "—"
-    assert page.provenance.toPlainText() == ""
-    assert not page.copy_button.isEnabled()
-    page.close()
-
-
-def test_supervisor_path_copies_host_path_without_execution(evidence, monkeypatch):
-    pytest.importorskip("PySide6")
-    from PySide6.QtWidgets import QApplication
-
-    from gui.views.baseline import BaselinePage
-
-    app = QApplication.instance() or QApplication([])
-    path = evidence / "docs/SUPERVISOR_EVIDENCE_BUNDLE.md"
-    path.parent.mkdir(exist_ok=True)
-    path.write_text("local document")
-    monkeypatch.setenv("RLREDTEAM_HOST_REPO", "/host/project with spaces")
-    page = BaselinePage(lambda message: None)
-    page.apply_baseline(load_baseline(evidence))
-    page.documents.selectRow(2)
-    assert page.copy_button.isEnabled()
-    page.copy_button.click()
-    assert app.clipboard().text() == "/host/project with spaces/docs/SUPERVISOR_EVIDENCE_BUNDLE.md"
-    page.documents.selectRow(0)
-    assert not page.copy_button.isEnabled()
-    page.close()
-
-
-def test_baseline_worker_loads_independently_and_failure_clears_old_values(evidence):
-    pytest.importorskip("PySide6")
-    import time
-
-    from PySide6.QtCore import QThreadPool
-    from PySide6.QtWidgets import QApplication
-
-    from gui.views.main_window import MainWindow
-
-    class LocalOnlyBackend:
-        def load_baseline(self):
-            return load_baseline(evidence)
-
-    app = QApplication.instance() or QApplication([])
-    window = MainWindow(backend=LocalOnlyBackend())
-    deadline = time.monotonic() + 3
-    while window.pages[8].data.state != "REVIEWED" and time.monotonic() < deadline:
-        app.processEvents()
-    assert window.pages[8].pairs.value.text() == "2"
-    assert "2 policy pairs" in window.pages[0].baseline_banner.message.text()
-    window._baseline_failed("evidence removed", "")
-    assert window.pages[8].statistics.rowCount() == 0
-    assert "evidence removed" in window.pages[0].baseline_banner.message.text()
-    QThreadPool.globalInstance().waitForDone()
-    window.close()
-
-
-def test_latest_statistics_path_rebased_to_host(monkeypatch):
-    pytest.importorskip("PySide6")
-    from PySide6.QtWidgets import QApplication
-
-    from gui.views.main_window import MainWindow
-
-    app = QApplication.instance() or QApplication([])
-    window = MainWindow(backend=object())
-    root = Path(__file__).resolve().parents[1]
-    monkeypatch.setenv("RLREDTEAM_HOST_REPO", "/host/evidence")
-    window._statistics_ready(str(root / PACKAGE / "report/primary_statistics.csv"))
-    assert app.clipboard().text() == f"/host/evidence/{PACKAGE}/report/primary_statistics.csv"
-    window.close()
-
-
-def test_baseline_does_not_wait_for_database_dashboard(evidence):
-    pytest.importorskip("PySide6")
-    import threading
-    import time
-
-    from PySide6.QtCore import QThreadPool
-    from PySide6.QtWidgets import QApplication
-
-    from gui.backend import DashboardData
-    from gui.views.main_window import MainWindow
-
-    release = threading.Event()
-
-    class BlockedDashboard:
-        def load_baseline(self):
-            return load_baseline(evidence)
-
-        def load_dashboard(self):
-            release.wait(timeout=5)
-            return DashboardData(source_status="test", baseline=self.load_baseline())
-
-    app = QApplication.instance() or QApplication([])
-    window = MainWindow(backend=BlockedDashboard())
-    try:
-        deadline = time.monotonic() + 3
-        while window.pages[8].data.state != "REVIEWED" and time.monotonic() < deadline:
-            app.processEvents()
-        assert window.pages[8].data.state == "REVIEWED"
-        assert not window.refresh_button.isEnabled()
-    finally:
-        release.set()
-        QThreadPool.globalInstance().waitForDone()
-        app.processEvents()
-        window.close()

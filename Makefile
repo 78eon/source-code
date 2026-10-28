@@ -1,4 +1,4 @@
-.PHONY: help build gui gui-build gui-test phase19-report phase19-verify reward-components-freeze reward-components-dry-run reward-components-run reward-components-verify cyborg-build cyborg-dirs cyborg-smoke cyborg-train cyborg-eval cyborg-verify cyberbattle-build cyberbattle-dirs cyberbattle-smoke cyberbattle-train cyberbattle-eval cyberbattle-verify phase14-report phase14-verify phase15-report phase15-verify recurrent-freeze recurrent-dry-run recurrent-dev recurrent-run recurrent-verify curriculum-freeze curriculum-dry-run curriculum-dev curriculum-run curriculum-verify graph-freeze graph-dry-run graph-dev graph-run graph-verify transfer-freeze transfer-dry-run transfer-dev transfer-run transfer-verify hierarchical-freeze hierarchical-dry-run hierarchical-dev hierarchical-run hierarchical-verify multiagent-freeze multiagent-dry-run multiagent-dev multiagent-run multiagent-verify onprem-train onprem-eval onprem-verify infrastructure-train infrastructure-eval hybrid-smoke hybrid-train hybrid-eval lab-build lab-plan lab-scan test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout enterprise-demo onprem-demo train train-sparse experiment-freeze experiment-dry-run experiment catalogue manifest verify-nvd clean
+.PHONY: help build desktop-image desktop-install desktop-dev desktop-build desktop-check api-image api-dev phase19-report phase19-verify reward-components-freeze reward-components-dry-run reward-components-run reward-components-verify cyborg-build cyborg-dirs cyborg-smoke cyborg-train cyborg-eval cyborg-verify cyberbattle-build cyberbattle-dirs cyberbattle-smoke cyberbattle-train cyberbattle-eval cyberbattle-verify phase14-report phase14-verify phase15-report phase15-verify recurrent-freeze recurrent-dry-run recurrent-dev recurrent-run recurrent-verify curriculum-freeze curriculum-dry-run curriculum-dev curriculum-run curriculum-verify graph-freeze graph-dry-run graph-dev graph-run graph-verify transfer-freeze transfer-dry-run transfer-dev transfer-run transfer-verify hierarchical-freeze hierarchical-dry-run hierarchical-dev hierarchical-run hierarchical-verify multiagent-freeze multiagent-dry-run multiagent-dev multiagent-run multiagent-verify onprem-train onprem-eval onprem-verify infrastructure-train infrastructure-eval hybrid-smoke hybrid-train hybrid-eval lab-build lab-plan lab-scan test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout enterprise-demo onprem-demo train train-sparse experiment-freeze experiment-dry-run experiment catalogue manifest verify-nvd clean
 
 .PHONY: neo4j-build neo4j-up neo4j-down neo4j-export neo4j-analyze neo4j-verify
 .PHONY: mlflow-build mlflow-up mlflow-down mlflow-sync mlflow-verify
@@ -268,24 +268,74 @@ reward-components-verify: ## Verify Phase 18 policies, pairing and frozen inputs
 		tests/test_reward.py tests/test_component_ablation.py
 	$(COMPOSE) run --rm app python scripts/verify_reward_component_ablation.py
 
-gui-build:      ## Build the desktop GUI image (separate from training)
-	podman build -t rlredteam-gui -f Dockerfile.gui .
+# Desktop dependencies stay inside Podman, separate from the frozen training image.
+DESKTOP_IMAGE := localhost/security-rl-desktop-builder:dev
+TWIN_SNAPSHOT_ARGS = $(if $(SECURITY_RL_TWIN_SNAPSHOT),-e SECURITY_RL_TWIN_SNAPSHOT=/app/analyst-twin.json -v "$(SECURITY_RL_TWIN_SNAPSHOT):/app/analyst-twin.json:ro,z",)
+DESKTOP_RUN = podman run --rm --cpus 2 --memory 6g --pids-limit 512 -v security-rl-desktop-cargo:/usr/local/cargo/registry -v "$(CURDIR)/desktop:/app/desktop:rw,z" -w /app/desktop $(DESKTOP_IMAGE)
 
-gui:             ## Launch the native containerized research console
-	@test -f .env || { echo "no .env — copy .env.example and set credentials"; exit 1; }
-	xhost +local: >/dev/null 2>&1 || true
-	set -a; . ./.env; set +a; \
-	podman run --rm -e DISPLAY="$$DISPLAY" \
-		-e POSTGRES_USER -e POSTGRES_PASSWORD -e POSTGRES_DB \
-		-e POSTGRES_HOST=127.0.0.1 -e POSTGRES_PORT=5433 \
-		-e RLREDTEAM_HOST_REPO="$$PWD" \
-	-v /tmp/.X11-unix:/tmp/.X11-unix:rw \
-	-v "$$PWD:/app:ro,z" -w /app --net=host rlredteam-gui python -m gui
+desktop-image:
+	podman build -t $(DESKTOP_IMAGE) -f desktop/Containerfile desktop
 
-gui-test:       ## Headless tests for the desktop GUI and adapter
-	podman run --rm -e QT_QPA_PLATFORM=offscreen \
-		-v "$$PWD:/app:ro,z" -w /app rlredteam-gui \
-		python -m pytest tests/test_gui*.py -q -p no:cacheprovider
+desktop-install: desktop-image
+	$(DESKTOP_RUN) npm ci
+
+desktop-check:
+	$(DESKTOP_RUN) sh -c 'npm run typecheck && npm test && npm run build && cd src-tauri && cargo check --locked && cargo test --locked'
+
+desktop-build:
+	$(DESKTOP_RUN) npm run tauri -- build --debug --no-bundle
+
+desktop-dev:
+	@test -n "$$DISPLAY" || { echo "DISPLAY is required"; exit 1; }
+	@test -f "$$XAUTHORITY" || { echo "Set XAUTHORITY to your display cookie file"; exit 1; }
+	podman run --rm --network host --userns keep-id --cap-drop ALL --security-opt no-new-privileges $(TWIN_SNAPSHOT_ARGS) \
+		-e DISPLAY -e XAUTHORITY=/tmp/desktop.xauth \
+		-e POSTGRES_HOST -e POSTGRES_PORT -e POSTGRES_USER -e POSTGRES_PASSWORD -e POSTGRES_DB \
+		-e NEO4J_URI -e NEO4J_USER -e NEO4J_PASSWORD -e SECURITY_RL_ANALYST_REPORT_IDS \
+		-v "$$XAUTHORITY:/tmp/desktop.xauth:ro" -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
+		-v "$(CURDIR)/src:/app/src:ro,z" \
+		-v "$(CURDIR)/configs/catalogues:/app/configs/catalogues:ro,z" \
+		-v "$(CURDIR)/desktop:/app/desktop:rw,z" -w /app/desktop $(DESKTOP_IMAGE) npm run tauri -- dev
+
+api-image:
+	podman build -t localhost/security-rl-desktop-api:dev -f Containerfile.api .
+
+api-dev:
+	@test -n "$$SECURITY_RL_API_TOKEN" || { echo "Set SECURITY_RL_API_TOKEN (32+ characters)"; exit 1; }
+	podman run --rm --network host --cap-drop ALL --security-opt no-new-privileges $(TWIN_SNAPSHOT_ARGS) \
+		-e SECURITY_RL_API_TOKEN -e POSTGRES_HOST -e POSTGRES_PORT -e POSTGRES_USER -e POSTGRES_PASSWORD -e POSTGRES_DB \
+		-e NEO4J_URI -e NEO4J_USER -e NEO4J_PASSWORD -e SECURITY_RL_ANALYST_REPORT_IDS \
+		-v "$(CURDIR)/configs/catalogues:/app/configs/catalogues:ro,z" \
+		-v "$(CURDIR)/src:/app/src:ro,z" localhost/security-rl-desktop-api:dev \
+		uvicorn rlredteam.api.app:app --host 127.0.0.1 --port 8765
+
+.PHONY: desktop-integration desktop-native-smoke
+desktop-integration:
+	bash desktop/check-integration.sh
+
+desktop-native-smoke:
+	podman run --rm --network none --user 1000:1000 --cpus 2 --memory 4g \
+		-v "$(CURDIR)/src:/app/src:ro,z" \
+		-v "$(CURDIR)/configs/catalogues:/app/configs/catalogues:ro,z" \
+		-v "$(CURDIR)/desktop:/app/desktop:ro,z" -w /app/desktop \
+		$(DESKTOP_IMAGE) python3 native-smoke.py
+
+.PHONY: desktop-package-image desktop-package desktop-package-test
+desktop-package-image:
+	podman build -t localhost/security-rl-desktop-packager:dev -f desktop/packaging/Containerfile desktop
+
+desktop-package:
+	podman run --rm --network none --cpus 2 --memory 6g \
+		-v "$(CURDIR)/src:/app/src:ro,z" \
+		-v "$(CURDIR)/configs/catalogues:/app/configs/catalogues:ro,z" \
+		-v "$(CURDIR)/desktop:/app/desktop:rw,z" \
+		-v security-rl-desktop-cargo:/usr/local/cargo/registry -w /app/desktop \
+		localhost/security-rl-desktop-packager:dev sh -c \
+		'pyinstaller --noconfirm --distpath src-tauri/runtime --workpath packaging/build packaging/backend.spec && python packaging/verify_bundle.py && npm run tauri -- build --bundles deb'
+
+desktop-package-test:
+	podman build -t localhost/security-rl-desktop-clean-test:dev -f desktop/packaging/Containerfile.clean-test desktop
+	bash desktop/packaging/test-install.sh
 
 cyberbattle-build: ## Build isolated CyberBattleSim image without changing NASim dependencies
 	podman image exists localhost/sourcecode_app:latest || $(COMPOSE) build app

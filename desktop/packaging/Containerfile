@@ -1,0 +1,5 @@
+FROM localhost/security-rl-desktop-builder:dev
+RUN apt-get update && apt-get install -y --no-install-recommends libpython3.11 && rm -rf /var/lib/apt/lists/*
+COPY packaging/requirements-lock.txt /tmp/packaging-requirements.txt
+RUN /opt/analyst-python/bin/pip install --no-cache-dir -r /tmp/packaging-requirements.txt
+ENV PATH=/opt/analyst-python/bin:$PATH

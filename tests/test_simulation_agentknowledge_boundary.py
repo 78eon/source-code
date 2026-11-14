@@ -27,7 +27,12 @@ def test_converted_fixture_smoke_knowledge_changes_only_through_consequences():
         "compromised_nodes",
         "credentials",
         "goal_reached",
+        "reward_config_sha256",
+        "environment_config_sha256",
+        "observation_schema_version",
     }
+    assert len(info["reward_config_sha256"]) == 64
+    assert len(info["environment_config_sha256"]) == 64
     entry = result.true_topology.entry_points[0]
     env.step(env.action_index(A.ENUMERATE_HOST, entry))
     vulnerability = next(iter(result.true_topology.vulnerabilities.values()))

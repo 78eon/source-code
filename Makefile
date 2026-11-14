@@ -5,10 +5,45 @@
 .PHONY: convergence-dirs convergence-1m-freeze convergence-1m-run convergence-1m-analyze convergence-normalized-freeze convergence-normalized-run convergence-normalized-analyze convergence-verify convergence-sparse-run convergence-evaluate reproducibility-check
 .PHONY: confirmatory-dirs confirmatory-freeze confirmatory-run-seed confirmatory-run-all confirmatory-analyze confirmatory-sparse-run-all confirmatory-evaluate confirmatory-verify confirmatory-verify-db confirmatory-compare
 
+# Stable development project identity, independent of checkout directory.
+# Override through the environment or make COMPOSE_PROJECT_NAME=other-project.
+# Explicit -p takes precedence over .env's Compose project setting.
+export COMPOSE_PROJECT_NAME ?= security-rl-development
+export RLREDTEAM_NETWORK ?= security-rl-development-internal
+
+# Explicit engineering-only surface. Never sources .env or starts the app trainer.
+.DEFAULT_GOAL := help
+ANALYTICAL_COMPOSE = podman compose --env-file /dev/null -p "$(COMPOSE_PROJECT_NAME)" -f compose.analytical.yml
+ANALYTICAL_OPERATOR = $(ANALYTICAL_COMPOSE) --profile operator
+.PHONY: preflight services-up services-down migrate desktop-doctor desktop-data neo4j-rebuild-report test-analytical
+preflight:
+	python3 -B scripts/runtime_preflight.py
+services-up:
+	python3 -B scripts/runtime_preflight.py --configuration-only
+	$(ANALYTICAL_COMPOSE) up -d postgres neo4j
+	python3 -B scripts/runtime_preflight.py --wait-services --project "$(COMPOSE_PROJECT_NAME)"
+services-down:
+	$(ANALYTICAL_COMPOSE) down
+migrate:
+	$(ANALYTICAL_OPERATOR) run --rm -T operator migrate
+.PHONY: migrate-workspace
+migrate-workspace:
+	$(ANALYTICAL_OPERATOR) run --rm -T operator migrate --workspace
+desktop-doctor:
+	python3 -B scripts/verify_registered_boundary.py
+	$(ANALYTICAL_OPERATOR) run --rm -T operator doctor
+desktop-data:
+	$(ANALYTICAL_OPERATOR) run --rm -T operator data --fixture $(if $(REPORT_ID),--report-id "$(REPORT_ID)",)
+neo4j-rebuild-report:
+	@test -n "$(REPORT_ID)" || { echo "REPORT_ID required"; exit 1; }
+	$(ANALYTICAL_OPERATOR) run --rm -T --entrypoint python operator scripts/rebuild_analytical_projection.py --report-id "$(REPORT_ID)"
+test-analytical:
+	bash scripts/test_runtime_podman.sh
+
 CONFIRMATORY_CONFIG := configs/experiments/experiment_01_discovery_corrected_v3.yaml
 CONFIRMATORY_ROOT := results/confirmatory_discovery_v3
 CONFIRMATORY_ARGS := --config $(CONFIRMATORY_CONFIG) --output-root /app/$(CONFIRMATORY_ROOT)
-CONFIRMATORY_RUN = podman run --rm --network sourcecode_rlredteam-internal \
+CONFIRMATORY_RUN = podman run --rm --network "$(RLREDTEAM_NETWORK)" \
 	--cap-drop=all --security-opt=no-new-privileges --user 10001:10001 \
 	--memory=12g --pids-limit=512 --tmpfs /app/runs:rw,mode=1777 \
 	-e PYTHONHASHSEED=0 -e MPLCONFIGDIR=/tmp/matplotlib \
@@ -57,7 +92,7 @@ confirmatory-compare: confirmatory-dirs ## Descriptive corrected-vs-frozen nativ
 # Historical evidence is read-only. Only the NEW convergence namespace is writable.
 CONVERGENCE_CONFIG ?= configs/experiments/experiment_01_convergence_1m_v2.yaml
 CONVERGENCE_NORMALIZED := configs/experiments/experiment_01_convergence_normalized_1m_v2.yaml
-CONVERGENCE_RUN = podman run --rm --network sourcecode_rlredteam-internal \
+CONVERGENCE_RUN = podman run --rm --network "$(RLREDTEAM_NETWORK)" \
 	--cap-drop=all --security-opt=no-new-privileges --user 10001:10001 \
 	--memory=12g --pids-limit=512 \
 	--tmpfs /app/runs:rw,mode=1777 \
@@ -113,10 +148,10 @@ export GID := $(shell id -g)
 export RLREDTEAM_GIT_DIRTY := $(shell test -n "$$(git status --porcelain 2>/dev/null)" && echo 1 || echo 0)
 
 # Podman is the sole supported container runtime for this project.
-COMPOSE := podman compose
-NEO4J_COMPOSE := podman compose -f docker-compose.yml -f docker-compose.neo4j.yml
+COMPOSE := podman compose -p "$(COMPOSE_PROJECT_NAME)"
+NEO4J_COMPOSE := $(COMPOSE) -f docker-compose.yml -f docker-compose.neo4j.yml
 NEO4J_CLIENT_IMAGE := localhost/security-rl-neo4j-client:latest
-NEO4J_RUN := podman run --rm --network sourcecode_rlredteam-internal \
+NEO4J_RUN := podman run --rm --network "$(RLREDTEAM_NETWORK)" \
 	--cap-drop=all --security-opt=no-new-privileges --user 10001:10001 \
 	-e PYTHONHASHSEED=0 -e POSTGRES_HOST=postgres -e POSTGRES_PORT=5432 \
 	-e POSTGRES_USER -e POSTGRES_PASSWORD -e POSTGRES_DB \
@@ -132,9 +167,9 @@ NEO4J_RUN := podman run --rm --network sourcecode_rlredteam-internal \
 	-v "$(CURDIR)/Dockerfile.neo4j:/app/Dockerfile.neo4j:ro,z" \
 	-v "$(CURDIR)/pyproject.toml:/app/pyproject.toml:ro,z" \
 	-v "$(CURDIR)/results:/app/results:rw,z" -w /app $(NEO4J_CLIENT_IMAGE)
-MLFLOW_COMPOSE := podman compose -f docker-compose.yml -f docker-compose.mlflow.yml
+MLFLOW_COMPOSE := $(COMPOSE) -f docker-compose.yml -f docker-compose.mlflow.yml
 MLFLOW_IMAGE := localhost/security-rl-mlflow:latest
-MLFLOW_RUN := podman run --rm --network sourcecode_rlredteam-internal \
+MLFLOW_RUN := podman run --rm --network "$(RLREDTEAM_NETWORK)" \
 	--cap-drop=all --security-opt=no-new-privileges --user 10001:10001 \
 	-e PYTHONHASHSEED=0 -e POSTGRES_HOST=postgres -e POSTGRES_PORT=5432 \
 	-e POSTGRES_USER -e POSTGRES_PASSWORD -e POSTGRES_DB \
@@ -201,9 +236,9 @@ db-summary:     ## Print what has been logged to PostgreSQL so far
 db-shell:       ## Open a psql prompt against the project database
 	$(COMPOSE) exec postgres psql -U rlredteam -d rlredteam
 
-test:           ## Everything — 173 tests, ~90s. Run before every commit
+test:           ## Non-training suite; training requires test-slow or explicit test-one selection
 	$(COMPOSE) up -d postgres
-	$(COMPOSE) run --rm app pytest -q -p no:cacheprovider
+	$(COMPOSE) run --rm app pytest -q -p no:cacheprovider -m "not slow"
 
 test-fast:      ## Skip the training tests — ~6s. Use this while coding
 	$(COMPOSE) run --rm app pytest -q -p no:cacheprovider -m "not slow"
@@ -270,7 +305,8 @@ reward-components-verify: ## Verify Phase 18 policies, pairing and frozen inputs
 
 # Desktop dependencies stay inside Podman, separate from the frozen training image.
 DESKTOP_IMAGE := localhost/security-rl-desktop-builder:dev
-TWIN_SNAPSHOT_ARGS = $(if $(SECURITY_RL_TWIN_SNAPSHOT),-e SECURITY_RL_TWIN_SNAPSHOT=/app/analyst-twin.json -v "$(SECURITY_RL_TWIN_SNAPSHOT):/app/analyst-twin.json:ro,z",)
+comma := ,
+TWIN_SNAPSHOT_ARGS = $(if $(SECURITY_RL_TWIN_SNAPSHOT),-e SECURITY_RL_TWIN_SNAPSHOT=/app/analyst-twin.json -v "$(SECURITY_RL_TWIN_SNAPSHOT):/app/analyst-twin.json:ro$(comma)z",)
 DESKTOP_RUN = podman run --rm --cpus 2 --memory 6g --pids-limit 512 -v security-rl-desktop-cargo:/usr/local/cargo/registry -v "$(CURDIR)/desktop:/app/desktop:rw,z" -w /app/desktop $(DESKTOP_IMAGE)
 
 desktop-image:
@@ -303,11 +339,26 @@ api-image:
 api-dev:
 	@test -n "$$SECURITY_RL_API_TOKEN" || { echo "Set SECURITY_RL_API_TOKEN (32+ characters)"; exit 1; }
 	podman run --rm --network host --cap-drop ALL --security-opt no-new-privileges $(TWIN_SNAPSHOT_ARGS) \
+		-e SECURITY_RL_REQUIRE_REPORT_APPROVAL=1 \
 		-e SECURITY_RL_API_TOKEN -e POSTGRES_HOST -e POSTGRES_PORT -e POSTGRES_USER -e POSTGRES_PASSWORD -e POSTGRES_DB \
 		-e NEO4J_URI -e NEO4J_USER -e NEO4J_PASSWORD -e SECURITY_RL_ANALYST_REPORT_IDS \
 		-v "$(CURDIR)/configs/catalogues:/app/configs/catalogues:ro,z" \
 		-v "$(CURDIR)/src:/app/src:ro,z" localhost/security-rl-desktop-api:dev \
 		uvicorn rlredteam.api.app:app --host 127.0.0.1 --port 8765
+
+# Explicit operator-owned configuration/state; never sources .env.
+.PHONY: api-workspace-dev
+api-workspace-dev:
+	@python3 -B scripts/workspace_api_launcher.py
+
+# Uses an operator-selected isolated namespace, never implicit host networking.
+.PHONY: collector-image api-live-lab live-lab-preflight
+collector-image:
+	podman build -t localhost/security-rl-controlled-collector:dev -f Containerfile.collector .
+api-live-lab:
+	@python3 -B scripts/workspace_api_launcher.py --live-lab
+live-lab-preflight:
+	@python3 -B scripts/live_lab_preflight.py --request "$(REQUEST)" --topology "$(TOPOLOGY)"
 
 .PHONY: desktop-integration desktop-native-smoke
 desktop-integration:

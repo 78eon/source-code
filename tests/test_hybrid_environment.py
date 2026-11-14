@@ -68,7 +68,7 @@ def test_families_are_structurally_distinct() -> None:
 
 
 def test_fixed_spaces_match_across_families_and_seeds() -> None:
-    config = HybridGeneratorConfig()
+    config = HybridGeneratorConfig.from_yaml()
     spaces = []
     for seed in (1, 2, 3, 2001, 2002, 2003):
         env = EnterpriseCyberEnv(
@@ -81,7 +81,7 @@ def test_fixed_spaces_match_across_families_and_seeds() -> None:
 
 
 def test_every_family_has_a_feasible_cross_boundary_path() -> None:
-    config = HybridGeneratorConfig()
+    config = HybridGeneratorConfig.from_yaml()
     for family in HybridFamily:
         env = EnterpriseCyberEnv(
             generate_hybrid_enterprise(42, family=family, config=config),

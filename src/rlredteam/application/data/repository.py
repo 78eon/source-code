@@ -253,7 +253,7 @@ class Repository:
         if not 1 <= int(limit) <= 500:
             raise ValueError("report limit must be between 1 and 500")
         with self._connect() as conn:
-            exists = conn.execute("SELECT to_regclass('public.attack_path_reports')").fetchone()[0]
+            exists = conn.execute("SELECT to_regclass('attack_path_reports')").fetchone()[0]
             if exists is None:
                 return []
             if report_ids is not None:
@@ -278,7 +278,7 @@ class Repository:
             raise ValueError("report limit must be between 1 and 500")
         with self._connect() as conn:
             exists = conn.execute(
-                "SELECT to_regclass('public.mitigation_counterfactual_reports')"
+                "SELECT to_regclass('mitigation_counterfactual_reports')"
             ).fetchone()[0]
             if exists is None:
                 return []
@@ -296,7 +296,7 @@ class Repository:
         if not 1 <= int(limit) <= 500:
             raise ValueError("graph limit must be between 1 and 500")
         with self._connect() as conn:
-            exists = conn.execute("SELECT to_regclass('public.causal_attack_graphs')").fetchone()[0]
+            exists = conn.execute("SELECT to_regclass('causal_attack_graphs')").fetchone()[0]
             if exists is None:
                 return []
             from rlredteam.storage.causal_store import CausalGraphStore

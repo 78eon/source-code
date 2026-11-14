@@ -18,7 +18,16 @@ class CausalGraphStore:
     def __init__(self, connection: psycopg.Connection) -> None:
         self.connection = connection
 
-    def save(self, graph: CausalGraph) -> str:
+    def save(self, graph: CausalGraph, *, commit: bool = True) -> str:
+        from .analytical_identity import verify_graph_identity
+        verify_graph_identity(graph)
+        with self.connection.transaction():
+            result = self._save(graph)
+        if commit:
+            self.connection.commit()
+        return result
+
+    def _save(self, graph: CausalGraph) -> str:
         evidence_ids = {item.evidence_id for item in graph.evidence}
         if any(
             not edge.evidence_ids or not set(edge.evidence_ids) <= evidence_ids
@@ -115,9 +124,7 @@ class CausalGraphStore:
                         for item in graph.edges
                     ],
                 )
-            self.connection.commit()
         except Exception:
-            self.connection.rollback()
             raise
         return graph.graph_id
 
@@ -182,8 +189,8 @@ class CausalGraphStore:
                 "provenance": dict(header[2]),
             }
         )
-        if graph.to_dict()["graph_id"] != graph_id:
-            raise CausalGraphPersistenceError("reconstructed graph identity mismatch")
+        from .analytical_identity import verify_graph_identity
+        verify_graph_identity(graph)
         return graph
 
     def list(self, limit: int = 50) -> list[dict[str, Any]]:

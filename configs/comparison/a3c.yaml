@@ -1,0 +1,83 @@
+{
+  "status": "planned",
+  "experiment_id": "rq1-comparison-template-v1",
+  "algorithm": "A3C",
+  "common_sha256": "00b08851fb93d66928ef1d79bb82d2d4e0619a9b81752e217aaa17566ae92f76",
+  "common": {
+    "environment_contract": "enterprise-comparison-env-v1",
+    "observation_version": "enterprise-observation-v1.1",
+    "action_schema_version": "enterprise-discovery-slots-v1",
+    "reward_version": "enterprise-config-exclusive-v2",
+    "reward_config_sha256": "7b189fe35d88f930d8725f2eef8e5a7172289617e45e1a94d8defbe681971cfc",
+    "dead_end_contract": "knowledge-dead-end-v1",
+    "max_nodes": 96,
+    "max_vulnerabilities": 8,
+    "max_steps": 200,
+    "training_budget": 1000192,
+    "network_scales": [
+      10,
+      30,
+      60
+    ],
+    "topology_split": {
+      "id": "rq1-fresh-proposed-v1",
+      "train": {
+        "start": 20001,
+        "stop": 20061
+      },
+      "validation": {
+        "start": 21001,
+        "stop": 21021
+      },
+      "test_locked": {
+        "start": 22001,
+        "stop": 22021
+      }
+    },
+    "run_seeds": [
+      52001,
+      52002,
+      52003,
+      52004,
+      52005,
+      52006,
+      52007,
+      52008,
+      52009,
+      52010
+    ],
+    "validation_episode_seeds": [
+      62001,
+      62002,
+      62003,
+      62004,
+      62005
+    ],
+    "final_episode_seeds_locked": [
+      63001,
+      63002,
+      63003,
+      63004,
+      63005
+    ],
+    "validation": {
+      "deterministic": true,
+      "policy_updates": false,
+      "checkpoint": "terminal_budget"
+    }
+  },
+  "hyperparameter_status": "provisional_not_registered",
+  "algorithm_specific": {
+    "implementation": "true_asynchronous_A3C_design_not_A2C",
+    "learning_rate": 0.0003,
+    "gamma": 0.99,
+    "workers": 4,
+    "rollout_length": 20,
+    "entropy_coefficient": 0.01,
+    "gradient_clip_norm": 0.5,
+    "net_arch": [
+      128,
+      128
+    ]
+  }
+}

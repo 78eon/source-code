@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ipaddress
 import os
+import re
 import shutil
 import subprocess
 import xml.etree.ElementTree as ET
@@ -196,6 +197,12 @@ def _safe_xml_root(raw: bytes | str) -> ET.Element:
 
 
 def parse_nmap_xml(raw: bytes | str) -> NmapEvidence:
+    # Nmap emits this inert declaration. No internal/external subset or entity is
+    # permitted; preserve the untouched acquisition separately from parser input.
+    data = raw.encode() if isinstance(raw, str) else raw
+    raw = re.sub(
+        rb"\A((?:\xef\xbb\xbf)?\s*(?:<\?xml[^?]*\?>\s*)?)<!DOCTYPE nmaprun>", rb"\1", data, count=1
+    )
     root = _safe_xml_root(raw)
     if root.tag != "nmaprun":
         raise ValueError("not an Nmap XML document")
@@ -224,9 +231,7 @@ def parse_nmap_xml(raw: bytes | str) -> NmapEvidence:
         for port_element in host_element.findall("./ports/port"):
             state_element = port_element.find("state")
             state = (
-                state_element.get("state", "unknown")
-                if state_element is not None
-                else "unknown"
+                state_element.get("state", "unknown") if state_element is not None else "unknown"
             )
             if state not in {"open", "open|filtered"}:
                 continue
@@ -260,13 +265,11 @@ def parse_greenbone_xml(raw: bytes | str) -> tuple[GreenboneFinding, ...]:
             continue
         nvt = result.find("nvt")
         finding_id = result.get("id") or f"result-{index}"
-        name = (result.findtext("name") or (nvt.findtext("name") if nvt is not None else ""))
+        name = result.findtext("name") or (nvt.findtext("name") if nvt is not None else "")
         severity_text = result.findtext("severity")
         refs = [] if nvt is None else nvt.findall("./refs/ref")
         cves = tuple(
-            ref.get("id")
-            for ref in refs
-            if ref.get("type", "").lower() == "cve" and ref.get("id")
+            ref.get("id") for ref in refs if ref.get("type", "").lower() == "cve" and ref.get("id")
         )
         findings.append(
             GreenboneFinding(
@@ -308,6 +311,44 @@ class NmapLabRunner:
         else:
             options = ["-sT", "-sV", "--version-light", "--top-ports", "100", "--open"]
         return tuple([*common, *options, str(network)])
+
+    def plan_tcp_inventory(self, target, ports, *, seconds, retries, concurrency):
+        """Exact-port unprivileged acquisition; budgets are validated by canonical caller."""
+        network = self.scope.validate_target(target)
+        if network.num_addresses != 1:
+            raise ScopeViolation("canonical collection requires one literal host")
+        if (
+            not ports
+            or any(type(p) is not int or not 1 <= p <= 65535 for p in ports)
+            or type(seconds) is not int
+            or seconds <= 0
+            or type(retries) is not int
+            or retries < 0
+            or type(concurrency) is not int
+            or concurrency <= 0
+        ):
+            raise ValueError("invalid explicit collector limits")
+        return (
+            self.binary,
+            *(("-6",) if network.version == 6 else ()),
+            "--unprivileged",
+            "-sT",
+            "-Pn",
+            "-n",
+            "--disable-arp-ping",
+            "--max-retries",
+            str(retries),
+            "--max-parallelism",
+            str(concurrency),
+            "--host-timeout",
+            f"{seconds}s",
+            "-p",
+            ",".join(map(str, sorted(ports))),
+            "--no-stylesheet",
+            "-oX",
+            "-",
+            str(network.network_address),
+        )
 
     def run(
         self,

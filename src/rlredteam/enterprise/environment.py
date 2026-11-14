@@ -6,14 +6,18 @@ No sockets, subprocesses, scanners or exploit tools are used.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any
+from typing import Any, ClassVar
 
 import gymnasium as gym
 import numpy as np
 
+from rlredteam.enterprise.environment_config import EnterpriseEnvironmentConfig
 from rlredteam.enterprise.model import EdgeType, EnterpriseGraph, NodeType, TrueTopology
+from rlredteam.enterprise.reward_attribution import RewardAttribution, implementation_sha256
+from rlredteam.enterprise.reward_config import EnterpriseRewardConfig
 from rlredteam.enterprise.state import AgentKnowledge, Observation
 
 
@@ -35,6 +39,36 @@ class EnterpriseActionType(StrEnum):
 class EnterpriseAction:
     type: EnterpriseActionType
     target: str
+    SCHEMA_VERSION: ClassVar[str] = "enterprise-action-v1"
+
+    def __post_init__(self):
+        try:
+            object.__setattr__(self, "type", EnterpriseActionType(self.type))
+        except (ValueError, TypeError):
+            raise ValueError("unsupported enterprise action type") from None
+        if (
+            not isinstance(self.target, str)
+            or not self.target
+            or len(self.target) > 4096
+            or self.target.strip() != self.target
+            or any(ord(char) < 32 or ord(char) == 127 for char in self.target)
+        ):
+            raise ValueError("action target must be a nonempty bounded identifier")
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "schema_version": self.SCHEMA_VERSION,
+            "type": self.type.value,
+            "target": self.target,
+        }
+
+    @classmethod
+    def from_dict(cls, value):
+        if not isinstance(value, dict) or set(value) != {"schema_version", "type", "target"}:
+            raise ValueError("invalid enterprise action fields")
+        if value["schema_version"] != cls.SCHEMA_VERSION:
+            raise ValueError("unsupported enterprise action schema")
+        return cls(value["type"], value["target"])
 
     @property
     def name(self) -> str:
@@ -64,7 +98,7 @@ class EnterpriseCyberEnv(gym.Env):
     identifiers. ``info["action_mask"]`` identifies currently valid actions.
     """
 
-    metadata = {"render_modes": ["ansi"]}
+    metadata = {"render_modes": ["ansi"], "action_schema_version": "enterprise-discovery-slots-v1"}
 
     _TYPE_ORDER = tuple(NodeType)
     _FEATURES_PER_NODE = Observation.feature_count(_TYPE_ORDER)
@@ -75,39 +109,96 @@ class EnterpriseCyberEnv(gym.Env):
         self,
         graph: EnterpriseGraph | TrueTopology,
         *,
-        max_steps: int = 200,
-        max_nodes: int = 32,
-        max_vulnerabilities: int = 16,
+        max_steps: int | None = None,
+        max_nodes: int | None = None,
+        max_vulnerabilities: int | None = None,
+        environment_config: EnterpriseEnvironmentConfig | None = None,
+        reward_config: EnterpriseRewardConfig | None = None,
         render_mode: str | None = None,
     ) -> None:
         super().__init__()
-        if max_steps <= 0:
+
+        config = environment_config or EnterpriseEnvironmentConfig.from_yaml()
+
+        resolved_max_steps = config.max_steps if max_steps is None else max_steps
+
+        resolved_max_nodes = config.max_nodes if max_nodes is None else max_nodes
+
+        resolved_max_vulnerabilities = (
+            config.max_vulnerabilities if max_vulnerabilities is None else max_vulnerabilities
+        )
+
+        if type(resolved_max_steps) is not int or resolved_max_steps <= 0:
             raise ValueError("max_steps must be positive")
+
+        if type(resolved_max_nodes) is not int or resolved_max_nodes <= 0:
+            raise ValueError("max_nodes must be positive")
+
+        if type(resolved_max_vulnerabilities) is not int or resolved_max_vulnerabilities <= 0:
+            raise ValueError("max_vulnerabilities must be positive")
+
         if render_mode not in {None, "ansi"}:
             raise ValueError("render_mode must be None or 'ansi'")
-        self.true_topology = graph
-        self.max_steps = max_steps
-        self.max_nodes = max_nodes
-        self.max_vulnerabilities = max_vulnerabilities
+
+        # Own the world: modifying the caller's graph must not change an episode.
+        graph.validate()
+        self.true_topology = deepcopy(graph)
+        self.max_steps = resolved_max_steps
+        self.max_nodes = resolved_max_nodes
+        self.max_vulnerabilities = resolved_max_vulnerabilities
+        self.environment_config = config
         self.render_mode = render_mode
-        if len(graph.nodes) > max_nodes:
-            raise ValueError(f"graph has {len(graph.nodes)} nodes; capacity is {max_nodes}")
-        if len(graph.vulnerabilities) > max_vulnerabilities:
+        self.reward_config = reward_config or EnterpriseRewardConfig.from_yaml()
+        values = (
+            self.reward_config.invalid_action,
+            self.reward_config.no_state_change,
+            self.reward_config.crown_jewel,
+            self.reward_config.exploit_base,
+            self.reward_config.exploit_base + 10 * self.reward_config.exploit_cvss_scale,
+            *self.reward_config.action_rewards.values(),
+        )
+        try:
+            finite_budget = np.isfinite(max(abs(value) for value in values) * self.max_steps)
+        except OverflowError:
+            finite_budget = False
+        if not finite_budget:
+            raise ValueError("episode return budget must remain finite")
+
+        if len(graph.nodes) > self.max_nodes:
+            raise ValueError(
+                f"graph has {len(graph.nodes)} nodes; " f"capacity is {self.max_nodes}"
+            )
+
+        if len(graph.vulnerabilities) > self.max_vulnerabilities:
             raise ValueError(
                 f"graph has {len(graph.vulnerabilities)} vulnerabilities; "
-                f"capacity is {max_vulnerabilities}"
+                f"capacity is {self.max_vulnerabilities}"
             )
+
         self.actions = self._build_actions()
         self.action_space = gym.spaces.Discrete(len(self.actions))
+
         observation_size = (
-            max_nodes * self._FEATURES_PER_NODE + max_nodes * max_nodes + 1
+            self.max_nodes * self._FEATURES_PER_NODE + self.max_nodes * self.max_nodes + 1
         )
+
         self.observation_space = gym.spaces.Box(
-            low=0.0, high=1.0, shape=(observation_size,), dtype=np.float32
+            low=0.0,
+            high=1.0,
+            shape=(observation_size,),
+            dtype=np.float32,
         )
+
         self.knowledge = AgentKnowledge()
         self.events: list[EnterpriseEvent] = []
         self._step = 0
+        self._episode_done = True
+        self.episode_return = 0.0
+
+    @property
+    def agent_knowledge(self) -> AgentKnowledge:
+        """Detached policy/reasoner snapshot. ``knowledge`` is privileged mutable debug state."""
+        return deepcopy(self.knowledge)
 
     @property
     def graph(self) -> TrueTopology:
@@ -121,9 +212,7 @@ class EnterpriseCyberEnv(gym.Env):
         ]
         for action_type in non_exploit:
             for index in range(self.max_nodes):
-                actions.append(
-                    EnterpriseAction(action_type, f"{self._NODE_SLOT_PREFIX}{index}")
-                )
+                actions.append(EnterpriseAction(action_type, f"{self._NODE_SLOT_PREFIX}{index}"))
         for index in range(self.max_vulnerabilities):
             actions.append(
                 EnterpriseAction(
@@ -134,6 +223,8 @@ class EnterpriseCyberEnv(gym.Env):
         return tuple(actions)
 
     def action_index(self, action_type: EnterpriseActionType, target: str) -> int:
+        validated = EnterpriseAction(action_type, target)
+        action_type, target = validated.type, validated.target
         if action_type == EnterpriseActionType.EXPLOIT:
             slot = self.knowledge.vulnerability_slot(target)
             slot_target = f"{self._VULNERABILITY_SLOT_PREFIX}{slot}"
@@ -153,10 +244,12 @@ class EnterpriseCyberEnv(gym.Env):
             if action.type == EnterpriseActionType.EXPLOIT
             else self._NODE_SLOT_PREFIX
         )
-        try:
-            slot = int(action.target.removeprefix(prefix))
-        except ValueError:
-            return action
+        suffix = action.target.removeprefix(prefix)
+        if not action.target.startswith(prefix) or not suffix.isascii() or not suffix.isdecimal():
+            raise ValueError("malformed action slot")
+        slot = int(suffix)
+        if suffix != str(slot):
+            raise ValueError("noncanonical action slot")
         known_targets = (
             self.knowledge.vulnerability_order
             if action.type == EnterpriseActionType.EXPLOIT
@@ -169,10 +262,12 @@ class EnterpriseCyberEnv(gym.Env):
     def reset(self, *, seed: int | None = None, options: dict | None = None):
         super().reset(seed=seed)
         self._step = 0
+        self._episode_done = False
+        self.episode_return = 0.0
         self.events = []
         self.knowledge = AgentKnowledge()
         for entry in self.true_topology.entry_points:
-            self._reveal_node(entry)
+            self._reveal_node(entry, reachable=True)
         for entry in self.true_topology.entry_points:
             for edge in self.true_topology.outgoing(entry, EdgeType.CONNECTS):
                 self._reveal_node(edge.target, reachable=True)
@@ -188,10 +283,12 @@ class EnterpriseCyberEnv(gym.Env):
 
     def _known_edges(self, edge_type: EdgeType):
         """Return agent-known endpoint pairs for one relationship type."""
-        return (
-            (source, target)
-            for source, target, known_type in self.knowledge.known_edges
-            if known_type == edge_type
+        return iter(
+            sorted(
+                (source, target)
+                for source, target, known_type in self.knowledge.known_edges
+                if known_type == edge_type
+            )
         )
 
     def _observation(self) -> np.ndarray:
@@ -213,9 +310,14 @@ class EnterpriseCyberEnv(gym.Env):
             "goal_reached": bool(
                 self.knowledge.accessed_assets & set(self.true_topology.crown_jewels)
             ),
+            "reward_config_sha256": self.reward_config.digest(),
+            "environment_config_sha256": self.environment_config.digest(),
+            "observation_schema_version": Observation.SCHEMA_VERSION,
         }
 
     def valid_action_mask(self) -> np.ndarray:
+        if self._episode_done:
+            return np.zeros(self.action_space.n, dtype=np.int8)
         return np.asarray(
             [self._can_execute(self._resolve_action(action))[0] for action in self.actions],
             dtype=np.int8,
@@ -239,6 +341,8 @@ class EnterpriseCyberEnv(gym.Env):
                 return False, "vulnerability has not been discovered"
             if known.vulnerability_grants_access[target] in known.access:
                 return False, "target is already compromised"
+            if known.vulnerability_targets[target] not in known.reachable | set(known.access):
+                return False, "vulnerability target is not reachable"
             return True, ""
         if target not in known.discovered:
             return False, "target has not been discovered"
@@ -289,6 +393,14 @@ class EnterpriseCyberEnv(gym.Env):
         }
         if target_type not in allowed_types[kind]:
             return False, f"{kind.value} does not apply to {target_type.value}"
+        if kind in {
+            EnterpriseActionType.DISCOVER_NETWORK,
+            EnterpriseActionType.ENUMERATE_HOST,
+            EnterpriseActionType.ENUMERATE_SERVICE,
+            EnterpriseActionType.ENUMERATE_APPLICATION,
+            EnterpriseActionType.ASSESS_VULNERABILITY,
+        } and target not in known.reachable | set(known.access):
+            return False, "target is not reachable"
         if kind == EnterpriseActionType.DISCOVER_NETWORK:
             return target not in known.enumerated, "network already discovered"
         if kind in {
@@ -304,9 +416,7 @@ class EnterpriseCyberEnv(gym.Env):
                 return False, "credential already obtained"
             possible = any(
                 edge_target == target and source in known.access
-                for source, edge_target in self._known_edges(
-                    EdgeType.YIELDS_CREDENTIAL
-                )
+                for source, edge_target in self._known_edges(EdgeType.YIELDS_CREDENTIAL)
             )
             return possible, "no compromised source yields this credential"
         if kind == EnterpriseActionType.AUTHENTICATE:
@@ -330,6 +440,7 @@ class EnterpriseCyberEnv(gym.Env):
                 return False, "user access is required"
             possible = any(
                 known.vulnerability_targets[vulnerability_id] == target
+                and known.vulnerability_grants_access[vulnerability_id] == target
                 and known.vulnerability_privileges[vulnerability_id] == "root"
                 for vulnerability_id in known.known_vulnerabilities
             )
@@ -345,7 +456,13 @@ class EnterpriseCyberEnv(gym.Env):
         return False, "unsupported action"
 
     def step(self, action: int):
-        if not self.action_space.contains(action):
+        if self._episode_done:
+            raise gym.error.ResetNeeded("reset required before stepping a new/finished episode")
+        if (
+            isinstance(action, bool | np.bool_)
+            or not isinstance(action, int | np.integer)
+            or not 0 <= int(action) < self.action_space.n
+        ):
             raise ValueError(f"action {action!r} outside [0, {self.action_space.n})")
         selected = self._resolve_action(self.actions[int(action)])
         valid, reason = self._can_execute(selected)
@@ -353,12 +470,12 @@ class EnterpriseCyberEnv(gym.Env):
         if valid:
             success, changed, reward, prerequisites, outcomes, reason = self._execute(selected)
         else:
-            success, changed, reward = False, False, -5.0
+            success = False
+            changed = False
+            reward = self.reward_config.invalid_action
             prerequisites, outcomes = (), ()
 
-        goal = bool(
-            self.knowledge.accessed_assets & set(self.true_topology.crown_jewels)
-        )
+        goal = bool(self.knowledge.accessed_assets & set(self.true_topology.crown_jewels))
         event = EnterpriseEvent(
             step=self._step - 1,
             rl_action_index=int(action),
@@ -374,8 +491,35 @@ class EnterpriseCyberEnv(gym.Env):
         self.events.append(event)
         terminated = goal
         truncated = self._step >= self.max_steps and not terminated
+        self._episode_done = terminated or truncated
+        self.episode_return += reward
+        branch = (
+            "invalid_action"
+            if not valid
+            else "stochastic_failure"
+            if not success
+            else self._reward_branch(selected.type, selected.target, changed)
+        )
+        attribution = RewardAttribution(
+            reward_total=reward,
+            reward_component=branch,
+            reward_reason=reason or branch,
+            action_type=selected.type.value,
+            target=selected.target,
+            state_change=changed,
+            success=success,
+            cvss_used=(
+                self.true_topology.vulnerabilities[selected.target].cvss
+                if branch == "exploit"
+                else None
+            ),
+            reward_config_sha256=self.reward_config.digest(),
+            reward_implementation_sha256=implementation_sha256(),
+            episode_return=self.episode_return,
+        )
         info = self._info()
         info["event"] = event
+        info["reward_attribution"] = attribution
         return self._observation(), reward, terminated, truncated, info
 
     def _execute(
@@ -412,7 +556,7 @@ class EnterpriseCyberEnv(gym.Env):
             prerequisites.append(f"known_host:{target}")
         elif kind == EnterpriseActionType.ENUMERATE_SERVICE:
             known.enumerated.add(target)
-            for child in self.true_topology.children(target, EdgeType.EXPOSES):
+            for child in sorted(self.true_topology.children(target, EdgeType.EXPOSES)):
                 self._reveal_node(child, reachable=True)
                 self._reveal_edge(target, child, EdgeType.EXPOSES)
                 outcomes.append(f"discovered:{child}")
@@ -424,7 +568,7 @@ class EnterpriseCyberEnv(gym.Env):
                     self._reveal_node(edge.target, reachable=True)
                     self._reveal_edge(edge.source, edge.target, edge.type)
                     outcomes.append(f"discovered:{edge.target}")
-                    for host in self.true_topology.parent_hosts(edge.target):
+                    for host in sorted(self.true_topology.parent_hosts(edge.target)):
                         self._reveal_node(host, reachable=True)
                         for parent_edge in self.true_topology.incoming(edge.target):
                             if parent_edge.source == host:
@@ -438,9 +582,7 @@ class EnterpriseCyberEnv(gym.Env):
         elif kind == EnterpriseActionType.ASSESS_VULNERABILITY:
             known.assessed.add(target)
             for vuln in self.true_topology.vulnerabilities.values():
-                if vuln.target == target and vuln.applies_to(
-                    self.true_topology.nodes[target]
-                ):
+                if vuln.target == target and vuln.applies_to(self.true_topology.nodes[target]):
                     known.learn_vulnerability(
                         vuln.id,
                         target,
@@ -452,34 +594,52 @@ class EnterpriseCyberEnv(gym.Env):
         elif kind == EnterpriseActionType.EXPLOIT:
             vuln = self.true_topology.vulnerabilities[target]
             prerequisites.append(f"known_vulnerability:{target}")
-            if self.np_random.random() > vuln.exploit_probability:
-                return False, False, -5.0, tuple(prerequisites), (), "exploit attempt failed"
+
+            if self.np_random.random() >= vuln.exploit_probability:
+                return (
+                    False,
+                    False,
+                    self.reward_config.invalid_action,
+                    tuple(prerequisites),
+                    (),
+                    "exploit attempt failed",
+                )
+
             known.access[vuln.grants_access_to] = vuln.privilege
             self._reveal_node(vuln.grants_access_to)
+
             for edge in self.true_topology.outgoing(
-                vuln.grants_access_to, EdgeType.YIELDS_CREDENTIAL
+                vuln.grants_access_to,
+                EdgeType.YIELDS_CREDENTIAL,
             ):
                 self._reveal_node(edge.target)
                 self._reveal_edge(edge.source, edge.target, edge.type)
                 outcomes.append(f"credential_source:{edge.target}")
+
             outcomes.append(f"{vuln.privilege}_access:{vuln.grants_access_to}")
+
         elif kind == EnterpriseActionType.OBTAIN_CREDENTIAL:
             sources = [
                 source
-                for source, edge_target in self._known_edges(
-                    EdgeType.YIELDS_CREDENTIAL
-                )
+                for source, edge_target in self._known_edges(EdgeType.YIELDS_CREDENTIAL)
                 if edge_target == target
                 if source in known.access
             ]
+
             known.credentials.add(target)
-            for edge in self.true_topology.outgoing(target, EdgeType.HAS_ACCESS):
+
+            for edge in self.true_topology.outgoing(
+                target,
+                EdgeType.HAS_ACCESS,
+            ):
                 self._reveal_node(edge.target, reachable=True)
                 self._reveal_edge(edge.source, edge.target, edge.type)
                 outcomes.append(f"access_target:{edge.target}")
+
             prerequisites.extend(f"access:{source}" for source in sources)
             prerequisites.append(f"known_identity:{target}")
             outcomes.append(f"credential:{target}")
+
         elif kind == EnterpriseActionType.AUTHENTICATE:
             identities = [
                 source
@@ -487,14 +647,23 @@ class EnterpriseCyberEnv(gym.Env):
                 if edge_target == target
                 if source in known.credentials
             ]
-            host_types = {NodeType.HOST, NodeType.LEGACY_HOST, NodeType.CLOUD_WORKLOAD}
+
+            host_types = {
+                NodeType.HOST,
+                NodeType.LEGACY_HOST,
+                NodeType.CLOUD_WORKLOAD,
+            }
+
             known.access[target] = (
                 "user" if known.known_node_types[target] in host_types else "read"
             )
+
             self._reveal_host_segments(target, outcomes)
+
             prerequisites.extend(f"credential:{identity}" for identity in identities)
             prerequisites.append(f"known_target:{target}")
             outcomes.append(f"authenticated:{target}")
+
         elif kind == EnterpriseActionType.PIVOT:
             sources = [
                 source
@@ -502,16 +671,39 @@ class EnterpriseCyberEnv(gym.Env):
                 if edge_target == target
                 if source in known.access
             ]
+
             known.access[target] = "user"
             known.reachable.add(target)
+
             self._reveal_host_segments(target, outcomes)
+
             prerequisites.extend(f"access:{source}" for source in sources)
             prerequisites.append(f"known_target:{target}")
             outcomes.append(f"pivoted:{target}")
+
         elif kind == EnterpriseActionType.ESCALATE_PRIVILEGE:
+            vulnerability_id = next(
+                identifier
+                for identifier in known.vulnerability_order
+                if known.vulnerability_targets[identifier] == target
+                and known.vulnerability_grants_access[identifier] == target
+                and known.vulnerability_privileges[identifier] == "root"
+            )
+            vulnerability = self.true_topology.vulnerabilities[vulnerability_id]
+            prerequisites.append(f"known_vulnerability:{vulnerability_id}")
+            if self.np_random.random() >= vulnerability.exploit_probability:
+                return (
+                    False,
+                    False,
+                    self.reward_config.invalid_action,
+                    tuple(prerequisites),
+                    (),
+                    "privilege escalation attempt failed",
+                )
             known.access[target] = "root"
             prerequisites.append(f"user_access:{target}")
             outcomes.append(f"root_access:{target}")
+
         elif kind == EnterpriseActionType.ACCESS_ASSET:
             containers = [
                 source
@@ -519,55 +711,97 @@ class EnterpriseCyberEnv(gym.Env):
                 if edge_target == target
                 if source in known.access
             ]
+
             known.accessed_assets.add(target)
+
             prerequisites.extend(f"access:{source}" for source in containers)
             outcomes.append(f"asset:{target}")
 
         changed = before != self._snapshot()
         reward = self._reward(kind, target, changed)
-        return True, changed, reward, tuple(prerequisites), tuple(outcomes), ""
 
-    def _reveal_host_segments(self, target: str, outcomes: list[str]) -> None:
-        for edge in self.true_topology.outgoing(target, EdgeType.LOCATED_IN):
+        return (
+            True,
+            changed,
+            reward,
+            tuple(prerequisites),
+            tuple(outcomes),
+            "",
+        )
+
+    def _reveal_host_segments(
+        self,
+        target: str,
+        outcomes: list[str],
+    ) -> None:
+        for edge in self.true_topology.outgoing(
+            target,
+            EdgeType.LOCATED_IN,
+        ):
             self._reveal_node(edge.target, reachable=True)
-            self._reveal_edge(edge.source, edge.target, edge.type)
+            self._reveal_edge(
+                edge.source,
+                edge.target,
+                edge.type,
+            )
             outcomes.append(f"network:{edge.target}")
 
-    def _reward(self, kind: EnterpriseActionType, target: str, changed: bool) -> float:
+    def _reward(
+        self,
+        kind: EnterpriseActionType,
+        target: str,
+        changed: bool,
+    ) -> float:
+        config = self.reward_config
+
+        branch = self._reward_branch(kind, target, changed)
+        if branch == "no_state_change":
+            return config.no_state_change
+
+        if branch == "objective":
+            return config.crown_jewel
+
+        if branch == "exploit":
+            vulnerability = self.true_topology.vulnerabilities[target]
+            return config.exploit_base + vulnerability.cvss * config.exploit_cvss_scale
+
+        return config.reward_for_action(kind.value)
+
+    def _reward_branch(self, kind: EnterpriseActionType, target: str, changed: bool) -> str:
+        """Single primary success-branch classifier; failures are resolved before scoring."""
         if not changed:
-            return -1.0
-        if (
-            kind == EnterpriseActionType.ACCESS_ASSET
-            and target in self.true_topology.crown_jewels
-        ):
-            return 100.0
+            return "no_state_change"
+        if kind == EnterpriseActionType.ACCESS_ASSET:
+            return (
+                "objective" if target in self.true_topology.crown_jewels else "other_state_change"
+            )
         if kind == EnterpriseActionType.EXPLOIT:
-            return 0.5 + self.true_topology.vulnerabilities[target].cvss / 10.0
-        return {
-            EnterpriseActionType.DISCOVER_NETWORK: 1.0,
-            EnterpriseActionType.ENUMERATE_HOST: 1.0,
-            EnterpriseActionType.ENUMERATE_SERVICE: 1.0,
-            EnterpriseActionType.ENUMERATE_APPLICATION: 1.0,
-            EnterpriseActionType.ASSESS_VULNERABILITY: 1.0,
-            EnterpriseActionType.OBTAIN_CREDENTIAL: 2.0,
-            EnterpriseActionType.AUTHENTICATE: 3.0,
-            EnterpriseActionType.PIVOT: 3.0,
-            EnterpriseActionType.ESCALATE_PRIVILEGE: 4.0,
-        }.get(kind, 0.0)
+            return "exploit"
+        if kind in {
+            EnterpriseActionType.DISCOVER_NETWORK,
+            EnterpriseActionType.ENUMERATE_HOST,
+            EnterpriseActionType.ENUMERATE_SERVICE,
+            EnterpriseActionType.ENUMERATE_APPLICATION,
+            EnterpriseActionType.ASSESS_VULNERABILITY,
+        }:
+            return "information_state_change"
+        return kind.value
 
     def _snapshot(self) -> tuple:
         return self.knowledge.snapshot()
 
     def attack_path(self) -> tuple[EnterpriseEvent, ...]:
-        """Return the successful, state-changing actions from this episode."""
+        """Return successful, state-changing actions from this episode."""
         return tuple(event for event in self.events if event.success and event.state_changed)
 
     def render(self) -> str | None:
         if self.render_mode != "ansi":
             return None
+
         return (
             f"{self.true_topology.name} step={self._step} "
-            f"known={len(self.knowledge.discovered)}/{len(self.true_topology.nodes)} "
+            f"known={len(self.knowledge.discovered)}/"
+            f"{len(self.true_topology.nodes)} "
             f"access={sorted(self.knowledge.access)} "
             f"assets={sorted(self.knowledge.accessed_assets)}"
         )

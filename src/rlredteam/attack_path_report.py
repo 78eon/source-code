@@ -178,6 +178,7 @@ def build_report(
     mode: ReportMode | str,
     experiment_id: str,
     checkpoint_hashes: Mapping[str, str] | None = None,
+    episode_identity_version: str | None = None,
 ) -> AttackPathReport:
     selected_mode = ReportMode(mode)
     trajectories = _trajectory_list(document)
@@ -205,7 +206,16 @@ def build_report(
         episode_suffix = trajectory.get(
             "evaluation_seed", trajectory.get("episode_id", trajectory_index)
         )
+        if episode_identity_version is not None:
+            if episode_identity_version != "security-rl-episode-uid-v2":
+                raise EvidenceValidationError("unsupported episode identity version")
+            episode_suffix = trajectory.get("episode_uid")
+            _require_sha256(episode_suffix, "analytical episode UID")
         episode_id = f"{run_id}:{episode_suffix}"
+        if episode_id in episode_events:
+            raise EvidenceValidationError(
+                "duplicate legacy episode identity; use versioned analytical ingestion"
+            )
         run_ids.add(run_id)
         goal_reached = bool(
             trajectory.get("goal_reached", trajectory.get("objective_reached", False))

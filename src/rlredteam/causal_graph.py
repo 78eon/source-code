@@ -664,6 +664,8 @@ def _raw_event_index(document: Any | None) -> dict[tuple[str, int], Mapping[str,
     for index, trajectory in enumerate(trajectories):
         run_id = str(trajectory.get("run_name") or trajectory.get("run_id") or UNKNOWN)
         suffix = trajectory.get("evaluation_seed", trajectory.get("episode_id", index))
+        if trajectory.get("episode_identity_version") == "security-rl-episode-uid-v2":
+            suffix = trajectory["episode_uid"]
         episode_id = f"{run_id}:{suffix}"
         events = trajectory.get(
             "events",

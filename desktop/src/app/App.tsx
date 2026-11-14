@@ -6,6 +6,8 @@ import { RecordBrowser } from "../components/RecordBrowser";
 import { GraphWorkspace } from "../features/topology/GraphWorkspace";
 import { PathExplorer } from "../features/attack-paths/PathExplorer";
 import { TwinView, SimulationView } from "../features/RecordedViews";
+import { LabInput } from "../features/LabInput";
+import { CanonicalWorkspace } from "../features/CanonicalWorkspace";
 import {
   ConfigurationView,
   type LocalSettings,
@@ -21,6 +23,8 @@ const endpoints: Record<Page, string> = {
   Reports: "reports",
 };
 export function App() {
+  const [showLabInput, setShowLabInput] = useState(false);
+  const [showCanonical, setShowCanonical] = useState(false);
   const native = isTauri();
   const [backendReady, setBackendReady] = useState(!native);
   const [startupError, setStartupError] = useState("");
@@ -36,6 +40,7 @@ export function App() {
     [health, setHealth] = useState("OFFLINE"),
     [error, setError] = useState(""),
     [loading, setLoading] = useState(false);
+  const [runtimeState, setRuntimeState] = useState<{state: string; message: string} | null>(null);
   useEffect(() => {
     if (!native) return;
     let active = true;
@@ -76,6 +81,7 @@ export function App() {
     setData(null);
     setEntities([]);
     setError("");
+    setRuntimeState(null);
     setLoading(true);
     (async () => {
       try {
@@ -92,6 +98,14 @@ export function App() {
         return;
       }
       try {
+        const readiness = await get<{state?: string; message?: string}>("readiness", token, abort.signal);
+        if (readiness?.state && readiness.state !== "EVIDENCE_READY") {
+          if (!abort.signal.aborted) {
+            setRuntimeState({state: readiness.state, message: readiness.message ?? "Evidence not ready"});
+            setHealth("DEGRADED");
+          }
+          return;
+        }
         const result = await get<unknown>(endpoints[page], token, abort.signal);
         const twinEntities =
           page === "Digital Twin"
@@ -152,6 +166,8 @@ export function App() {
             key={p}
             aria-current={page === p ? "page" : undefined}
             onClick={() => {
+              setShowLabInput(false);
+              setShowCanonical(false);
               if (p !== page) {
                 setData(null);
                 setError("");
@@ -177,6 +193,8 @@ export function App() {
           </div>
           <span className={"status " + health.toLowerCase()}>{health}</span>
           <button onClick={() => setReload((r) => r + 1)}>Refresh</button>
+          <button onClick={() => setShowLabInput((shown) => !shown)}>Test / Lab Input</button>
+          <button onClick={() => {setShowCanonical(shown => !shown); setShowLabInput(false);}}>Canonical Evidence</button>
           {native && (
             <button onClick={() => setShowSettings(true)}>Settings</button>
           )}
@@ -216,6 +234,10 @@ export function App() {
           <p role="alert">{startupError}</p>
         ) : !backendReady ? (
           <p className="empty">Starting local backend…</p>
+        ) : showCanonical ? (
+          <CanonicalWorkspace token={token} />
+        ) : showLabInput ? (
+          <LabInput token={token} allowOfflineProcessing />
         ) : loading ? (
           <p className="empty">Loading recorded evidence…</p>
         ) : error ? (
@@ -223,6 +245,12 @@ export function App() {
             <h2>Data unavailable</h2>
             <p>{error}</p>
             <p>No fixture or substitute data is displayed.</p>
+          </section>
+        ) : runtimeState ? (
+          <section className="notice" role="status">
+            <h2>{runtimeState.state}</h2>
+            <p>{runtimeState.message}</p>
+            <p>No substitute evidence is displayed. No automatic repair or acquisition was started.</p>
           </section>
         ) : page === "Network Graph" && data ? (
           <GraphWorkspace data={data as GraphDTO} />

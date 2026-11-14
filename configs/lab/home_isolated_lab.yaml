@@ -1,0 +1,6 @@
+authorization_id: RLREDTEAM-HOMELAB-2026-001
+allowed_networks:
+  - 10.77.0.0/24
+  - 10.10.10.0/24
+max_addresses: 256
+execution_enabled: true

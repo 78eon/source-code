@@ -14,7 +14,7 @@ def host_repo_root() -> str:
 
 def training_network() -> str:
     """Return the isolated compose network used by training."""
-    return os.environ.get("RLREDTEAM_NETWORK", "sourcecode_rlredteam-internal")
+    return os.environ.get("RLREDTEAM_NETWORK", "security-rl-development-internal")
 
 
 @dataclass(frozen=True)

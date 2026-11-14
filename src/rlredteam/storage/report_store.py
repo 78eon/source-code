@@ -19,7 +19,17 @@ class ReportStore:
     def __init__(self, connection: psycopg.Connection) -> None:
         self.connection = connection
 
-    def save(self, report: AttackPathReport) -> str:
+    def save(self, report: AttackPathReport, *, commit: bool = True) -> str:
+        from .analytical_identity import validate_payload, verify_report_identity
+        validate_payload(report.to_dict())
+        verify_report_identity(report)
+        with self.connection.transaction():
+            result = self._save(report)
+        if commit:
+            self.connection.commit()
+        return result
+
+    def _save(self, report: AttackPathReport) -> str:
         payload = report.to_dict()
         provenance = report.provenance
         existing = self.connection.execute(
@@ -79,9 +89,7 @@ class ReportStore:
                         for item in report.observed_path_criticality
                     ],
                 )
-            self.connection.commit()
         except Exception:
-            self.connection.rollback()
             raise
         return report.report_id
 

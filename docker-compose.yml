@@ -79,6 +79,7 @@ services:
 
 networks:
   rlredteam-internal:
+    name: ${RLREDTEAM_NETWORK:-security-rl-development-internal}
     # No egress. This is what makes the offline-training check pass.
     internal: true
 

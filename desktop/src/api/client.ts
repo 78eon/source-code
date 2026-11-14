@@ -23,3 +23,14 @@ export async function get<T>(
     );
   return response.json() as Promise<T>;
 }
+
+export async function post<T>(path: string, token: string, body: unknown, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(origin + "/api/" + path, {
+    method: "POST",
+    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!response.ok) throw new Error("Preview unavailable or input rejected (" + response.status + ")");
+  return response.json() as Promise<T>;
+}

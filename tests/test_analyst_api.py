@@ -61,6 +61,13 @@ def test_auth_and_no_mutation(client):
     assert client.get("/api/assets/missing").status_code == 404
 
 
+def test_non_ascii_bad_bearer_token_is_unauthorized(monkeypatch):
+    monkeypatch.setenv("SECURITY_RL_API_TOKEN", "a" * 32)
+    with TestClient(create_app(Service()), raise_server_exceptions=False) as client:
+        response = client.get("/api/assets", headers={b"Authorization": b"Bearer \xff"})
+    assert response.status_code == 401
+
+
 def test_failure_is_not_empty_data(client):
     def fail():
         raise RuntimeError("password=secret")

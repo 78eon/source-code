@@ -171,10 +171,26 @@ def manifest(**overrides) -> prov.ExperimentManifest:
     return prov.ExperimentManifest(**base)
 
 
-def test_gate_passes_a_well_formed_run(monkeypatch) -> None:
+def test_gate_passes_a_well_formed_run(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("POSTGRES_PASSWORD", "x")
     monkeypatch.setattr(prov, "_internet_reachable", lambda timeout=1.5: False)
+    monkeypatch.setattr(prov, "REPO_ROOT", tmp_path)
+    (tmp_path / "runs").mkdir()
     assert prov.run_gate(manifest()).passed
+
+
+def test_gate_refuses_unwritable_output_directory(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("POSTGRES_PASSWORD", "x")
+    monkeypatch.setattr(prov, "_internet_reachable", lambda timeout=1.5: False)
+    monkeypatch.setattr(prov, "REPO_ROOT", tmp_path)
+    output = tmp_path / "runs"
+    output.mkdir(mode=0o500)
+    try:
+        result = prov.run_gate(manifest())
+        assert not result.passed
+        assert any("output directory is writable" in failure for failure in result.failures())
+    finally:
+        output.chmod(0o700)
 
 
 @pytest.mark.parametrize("declared", ["", "unknown", "unexpected"])

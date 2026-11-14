@@ -8,6 +8,7 @@ vulnerabilities by accident.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import ClassVar
 
 import numpy as np
 
@@ -94,31 +95,19 @@ class AgentKnowledge:
         try:
             return self.vulnerability_order.index(vulnerability_id)
         except ValueError:
-            raise KeyError(
-                f"vulnerability is not known to the agent: {vulnerability_id}"
-            ) from None
+            raise KeyError(f"vulnerability is not known to the agent: {vulnerability_id}") from None
 
     def access_level(self, node_id: str) -> int:
-        return {"none": 0, "user": 1, "read": 1, "root": 2}.get(
-            self.access.get(node_id, "none"), 0
-        )
+        return {"none": 0, "user": 1, "read": 1, "root": 2}.get(self.access.get(node_id, "none"), 0)
 
     def snapshot(self) -> tuple:
         """Hashable research/debug snapshot of all agent-visible state."""
         existing = (
             frozenset(self.discovered),
             tuple(self.discovery_order),
+            tuple(sorted((node_id, kind.value) for node_id, kind in self.known_node_types.items())),
             tuple(
-                sorted(
-                    (node_id, kind.value)
-                    for node_id, kind in self.known_node_types.items()
-                )
-            ),
-            tuple(
-                sorted(
-                    (source, target, kind.value)
-                    for source, target, kind in self.known_edges
-                )
+                sorted((source, target, kind.value) for source, target, kind in self.known_edges)
             ),
             frozenset(self.enumerated),
             frozenset(self.assessed),
@@ -134,23 +123,17 @@ class AgentKnowledge:
         )
         # Existing environments never populate these fields, so their frozen
         # snapshots retain exactly the old tuple shape and values.
-        if not (
-            self.known_properties
-            or self.known_services
-            or self.known_native_vulnerabilities
-        ):
+        if not (self.known_properties or self.known_services or self.known_native_vulnerabilities):
             return existing
         return existing + (
             tuple(
                 sorted(
-                    (node, tuple(sorted(values)))
-                    for node, values in self.known_properties.items()
+                    (node, tuple(sorted(values))) for node, values in self.known_properties.items()
                 )
             ),
             tuple(
                 sorted(
-                    (node, tuple(sorted(values)))
-                    for node, values in self.known_services.items()
+                    (node, tuple(sorted(values))) for node, values in self.known_services.items()
                 )
             ),
             tuple(
@@ -167,6 +150,17 @@ class Observation:
     """Immutable policy observation derived exclusively from AgentKnowledge."""
 
     values: tuple[float, ...]
+    SCHEMA_VERSION: ClassVar[str] = "enterprise-observation-v1.1"
+    FEATURE_NAMES: ClassVar[tuple[str, ...]] = (
+        "discovered",
+        "enumerated",
+        "assessed",
+        "reachable",
+        "accessed",
+        "root",
+        "credential_owned",
+        "known_vulnerability",
+    ) + tuple("type:" + kind.value for kind in NodeType)
 
     @staticmethod
     def feature_count(type_order: tuple[NodeType, ...]) -> int:
@@ -184,6 +178,8 @@ class Observation:
         max_steps: int,
         type_order: tuple[NodeType, ...] = tuple(NodeType),
     ) -> Observation:
+        if max_nodes <= 0 or max_steps <= 0 or step < 0:
+            raise ValueError("positive capacities and nonnegative step required")
         if len(knowledge.discovery_order) > max_nodes:
             raise ValueError("agent knowledge exceeds observation node capacity")
 
@@ -212,9 +208,7 @@ class Observation:
             known_type = knowledge.known_node_types[node_id]
             values.extend(float(known_type == kind) for kind in type_order)
 
-        slot_by_node = {
-            node_id: index for index, node_id in enumerate(knowledge.discovery_order)
-        }
+        slot_by_node = {node_id: index for index, node_id in enumerate(knowledge.discovery_order)}
         adjacency = [0.0] * (max_nodes * max_nodes)
         for source, target, _ in knowledge.known_edges:
             source_slot = slot_by_node[source]

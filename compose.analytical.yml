@@ -1,0 +1,68 @@
+# Engineering services only. No training, acquisition or automatic data import.
+services:
+  postgres:
+    image: docker.io/library/postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+      POSTGRES_DB: ${POSTGRES_DB:?required}
+    ports: ["127.0.0.1:${POSTGRES_PORT:-5433}:5432"]
+    volumes: [analytical_pg:/var/lib/postgresql/data]
+    networks: [analytical]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    security_opt: ["no-new-privileges:true"]
+  neo4j:
+    image: docker.io/library/neo4j:5.26.0-community
+    user: "7474:7474"
+    environment:
+      NEO4J_AUTH: ${NEO4J_USER:?required}/${NEO4J_PASSWORD:?required}
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 256m
+    ports: ["127.0.0.1:7474:7474", "127.0.0.1:7687:7687"]
+    volumes: [analytical_neo:/data]
+    networks: [analytical]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:7474"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  operator:
+    image: localhost/security-rl-desktop-api:dev
+    profiles: [operator]
+    user: "0:0" # rootless UID0 maps host operator; no host-root escalation
+    networks: [analytical]
+    environment:
+      PYTHONPATH: /app/src
+      PYTHONDONTWRITEBYTECODE: "1"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: ${POSTGRES_USER:?required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+      POSTGRES_DB: ${POSTGRES_DB:?required}
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: ${NEO4J_USER:?required}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:?required}
+      SECURITY_RL_REQUIRE_REPORT_APPROVAL: "1"
+      SECURITY_RL_ANALYST_REPORT_IDS: ${SECURITY_RL_ANALYST_REPORT_IDS:-}
+    volumes:
+      - .:/app:ro
+      - analytical_runtime:/runtime
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    entrypoint: ["python", "-B", "scripts/analytical_runtime.py"]
+    command: ["doctor"]
+networks:
+  analytical:
+    name: ${RLREDTEAM_NETWORK:-security-rl-development-internal}
+    internal: true
+volumes:
+  analytical_pg:
+  analytical_neo:
+  analytical_runtime:

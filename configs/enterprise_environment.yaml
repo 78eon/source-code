@@ -1,0 +1,4 @@
+enterprise_environment:
+  max_steps: 200
+  max_nodes: 32
+  max_vulnerabilities: 16

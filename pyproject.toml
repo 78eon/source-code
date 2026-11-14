@@ -50,6 +50,14 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
+    "action: bounded action contract checks",
+    "mask: knowledge-only eligibility checks",
+    "candidate: bounded candidate/reasoning checks",
+    "environment: bounded synthetic environment correctness; no training",
+    "observation: policy-visible observation contract",
+    "seed: deterministic RNG contract",
+    "training: executes model training; forbidden in analytical runs",
+    "heldout: held-out execution; forbidden in analytical runs",
     "integration: needs nasim installed",
     "postgres: needs a live PostgreSQL (docker compose up -d postgres)",
     "slow: runs actual training; excluded from the default fast suite",

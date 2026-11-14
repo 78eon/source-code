@@ -10,7 +10,9 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from .services import AnalystService
 
 
-def create_app(service=None):
+def create_app(
+    service=None, *, lab_input_service=None, workspace_service=None, assessment_runner=None
+):
     app = FastAPI(title="Security-RL Analyst", docs_url=None, redoc_url=None, openapi_url=None)
     service = service or AnalystService()
     app.add_middleware(
@@ -24,15 +26,17 @@ def create_app(service=None):
             "tauri://localhost",
             "http://tauri.localhost",
         ],
-        allow_methods=["GET"],
-        allow_headers=["Authorization"],
+        allow_methods=["GET", "POST"],
+        allow_headers=["Authorization", "Content-Type"],
     )
 
     def authorize(authorization: str = Header(default="")):
         token = os.environ.get("SECURITY_RL_API_TOKEN", "")
         if len(token) < 32:
             raise HTTPException(503, "API token not configured (minimum 32 characters)")
-        if not secrets.compare_digest(authorization, "Bearer " + token):
+        if not secrets.compare_digest(
+            authorization.encode("utf-8"), ("Bearer " + token).encode("utf-8")
+        ):
             raise HTTPException(401, "Authentication required")
 
     def invoke(fn, *args):
@@ -59,6 +63,10 @@ def create_app(service=None):
         }
 
     auth = [Depends(authorize)]
+
+    @app.get("/api/readiness", dependencies=auth)
+    def readiness():
+        return invoke(service.readiness)
 
     @app.get("/api/assets", dependencies=auth)
     def assets():
@@ -123,6 +131,15 @@ def create_app(service=None):
     def simulation(simulation_id: str):
         return detail(invoke(service.simulations)["items"], "id", simulation_id)
 
+    from .lab_input import router
+
+    app.include_router(router(lab_input_service, authorize))
+    from .canonical_workspace import router as workspace_router
+
+    app.include_router(workspace_router(workspace_service, authorize, assessment_runner))
+    from .live_collection import router as live_router
+
+    app.include_router(live_router(assessment_runner, authorize))
     return app
 
 

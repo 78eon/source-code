@@ -43,7 +43,7 @@ def main():
     instance = secrets.token_hex(16)
     os.environ["SECURITY_RL_API_TOKEN"] = token
     os.environ["SECURITY_RL_BACKEND_INSTANCE"] = instance
-    from .app import create_app
+    from .workspace_runtime import create_configured_app
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
         listener.bind(("127.0.0.1", 0))
@@ -51,7 +51,7 @@ def main():
         port = listener.getsockname()[1]
         server = uvicorn.Server(
             uvicorn.Config(
-                create_app(),
+                create_configured_app(),
                 host="127.0.0.1",
                 port=port,
                 access_log=False,

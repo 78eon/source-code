@@ -21,6 +21,9 @@ PG = {"host": "127.0.0.1", "port": 5432, "database": "demo", "user": "reader", "
 
 @pytest.fixture(autouse=True)
 def private_home(tmp_path, monkeypatch):
+    # activate() deliberately replaces desktop process settings. Isolate those
+    # mutations so later tests retain their explicit disposable DB configuration.
+    monkeypatch.setattr(os, "environ", os.environ.copy())
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
 
 

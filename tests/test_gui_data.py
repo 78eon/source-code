@@ -186,11 +186,9 @@ def test_missing_snapshot_returns_empty_topology(tmp_path, monkeypatch) -> None:
 # -- Train view: the displayed command must not leak secrets ----------------
 
 
-def test_command_preview_redacts_the_database_password() -> None:
+def test_command_preview_redacts_the_database_password(monkeypatch) -> None:
     """The command is shown on screen and projected during demos."""
-    import os
-
-    os.environ["POSTGRES_PASSWORD"] = "hunter2-should-not-appear"
+    monkeypatch.setenv("POSTGRES_PASSWORD", "hunter2-should-not-appear")
     from rlredteam.application.train_request import TrainRequest
 
     request = TrainRequest(seed=42, topology_seed=42, timesteps=1000)

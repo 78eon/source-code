@@ -33,6 +33,10 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    if not args.report.is_file() or not args.source.is_file():
+        print(json.dumps({"status": "SOURCE_MISSING", "detail":
+            "Report and recorded trajectories required. Validate/import Phase14 evidence first; no graph written."}))
+        return 2
     report = json.loads(args.report.read_text())
     source = json.loads(args.source.read_text())
     graph = build_causal_graph(report, source)

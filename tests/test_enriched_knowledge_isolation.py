@@ -1,20 +1,50 @@
 import ast
 import hashlib
+import secrets
 import socket
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 
 from rlredteam.assign import assign_cves
 from rlredteam.catalogue import CVECatalogue
 from rlredteam.evidence.models import ApplicabilityStatus as S
+from rlredteam.knowledge.vulnerabilities.constraints import VersionOperator
 from rlredteam.knowledge.vulnerabilities.importers import load_local
+from rlredteam.knowledge.vulnerabilities.serialization import dumps
+from rlredteam.knowledge.vulnerabilities.snapshot import freeze
 from rlredteam.reward import RewardConfig, RewardEngine
-from tests.enriched_knowledge_fixtures import FIXTURES, TIME, assessment, engine
+from tests.enriched_knowledge_fixtures import (
+    TIME,
+    assessment,
+    constraint,
+    engine,
+    entry,
+    product,
+    registry,
+)
 from tests.test_reward import exploit_event
 from tests.vulnerability_fixtures import engine as historical_engine
+
+
+@pytest.fixture
+def local_knowledge(tmp_path):
+    """Exercise the real local importer without an ignored checkout dependency."""
+    name, vendor = "Product" + uuid4().hex, "Vendor" + uuid4().hex
+    version = ".".join(str(secrets.randbelow(1000) + 1) for _ in range(3))
+    identifier = "SYNTH-VULN-" + uuid4().hex
+    affected = product(
+        name, vendor, version_constraints=(constraint(VersionOperator.EXACT, version=version),)
+    )
+    snapshot = freeze(
+        registry(entry(vulnerability_id=identifier, affected_products=(affected,))), created_at=TIME
+    )
+    path = tmp_path / (uuid4().hex + ".json")
+    path.write_text(dumps(snapshot), encoding="utf-8")
+    return SimpleNamespace(path=str(path), header=f"{name}/{version}", identifier=identifier)
 
 
 def fingerprint_files():
@@ -27,18 +57,18 @@ def fingerprint_files():
     return {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths if p.is_file()}
 
 
-def test_frozen_config_catalogue_manifest_and_reward_lookup_unchanged():
+def test_frozen_config_catalogue_manifest_and_reward_lookup_unchanged(local_knowledge):
     before = fingerprint_files()
     catalogue = CVECatalogue.open_default()
     assignment = assign_cves(["e1", "e2"], ["p1"], catalogue, 42)
     record = assignment.cve_for("e1")
     reward = RewardEngine(RewardConfig()).score(exploit_event(cvss=record.base_score))
     assert assessment(engine()).applicability_status == S.LIKELY
-    snapshot = load_local(FIXTURES, created_at=TIME)
-    value = engine("Apache HTTP Server/2.4.49", enriched=snapshot.registry())
+    snapshot = load_local(local_knowledge.path, created_at=TIME)
+    value = engine(local_knowledge.header, enriched=snapshot.registry())
     assert (
         value.assess(
-            next(iter(value.products)), "CVE-2021-42013", created_at=TIME
+            next(iter(value.products)), local_knowledge.identifier, created_at=TIME
         ).applicability_status
         == S.LIKELY
     )
@@ -81,15 +111,15 @@ def test_enriched_is_explicit_and_cannot_be_mixed():
         assert "knowledge.vulnerabilities" not in Path("src/rlredteam", name).read_text()
 
 
-def test_loading_matching_snapshot_and_twin_never_acquire_network(monkeypatch):
+def test_loading_matching_snapshot_and_twin_never_acquire_network(monkeypatch, local_knowledge):
     def denied(*args, **kwargs):
         raise AssertionError("network/process activity forbidden")
 
     for name in ("socket", "getaddrinfo", "create_connection"):
         monkeypatch.setattr(socket, name, denied)
     monkeypatch.setattr(subprocess, "Popen", denied)
-    snapshot = load_local(FIXTURES, created_at=TIME)
-    value = engine("Example Server/1.5.0", enriched=snapshot.registry())
+    snapshot = load_local(local_knowledge.path, created_at=TIME)
+    value = engine(local_knowledge.header, enriched=snapshot.registry())
     results = value.evaluate(created_at=TIME).list()
     from rlredteam.digital_twin.builder import DigitalTwinBuilder
 
@@ -113,11 +143,13 @@ def test_loading_matching_snapshot_and_twin_never_acquire_network(monkeypatch):
                 assert not set((node.module or "").split(".")) & forbidden
 
 
-def test_cli_enriched_selection_uses_supplied_result_not_extra_acquisition(monkeypatch, capsys):
+def test_cli_enriched_selection_uses_supplied_result_not_extra_acquisition(
+    monkeypatch, capsys, local_knowledge
+):
     import scripts.observe_lab as cli
     from tests.fingerprint_fixtures import observed_bundle
 
-    retained = historical_engine("Example Server/1.5.0")
+    retained = historical_engine(local_knowledge.header)
     calls = []
 
     class RetainedEngine:
@@ -145,14 +177,14 @@ def test_cli_enriched_selection_uses_supplied_result_not_extra_acquisition(monke
                 "22",
                 "--assess-vulnerabilities",
                 "--vulnerability-knowledge",
-                FIXTURES,
+                local_knowledge.path,
             ]
         )
         == 0
     )
     output = capsys.readouterr().out
     assert len(calls) == 1
-    assert "knowledge_snapshot_hash" in output and "SYNTH-VULN-example-range" in output
+    assert "knowledge_snapshot_hash" in output and local_knowledge.identifier in output
     assert '"value":"LIKELY"' in output
 
 

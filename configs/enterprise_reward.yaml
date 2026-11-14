@@ -1,0 +1,21 @@
+enterprise_reward:
+  invalid_action: -5.0
+  no_state_change: -1.0
+  crown_jewel: 100.0
+
+  exploit:
+    base: 0.5
+    cvss_scale: 0.1
+
+  actions:
+    discover_network: 1.0
+    enumerate_host: 1.0
+    enumerate_service: 1.0
+    enumerate_application: 1.0
+    assess_vulnerability: 1.0
+    obtain_credential: 2.0
+    authenticate: 3.0
+    pivot: 3.0
+    escalate_privilege: 4.0
+    access_asset: 0.0
+    

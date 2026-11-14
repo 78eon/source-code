@@ -22,6 +22,10 @@ from rlredteam.enterprise.model import (
     Vulnerability,
 )
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_FAMILY_CATALOGUE = (
+    REPO_ROOT / "configs/catalogues/hybrid_families.yaml"
+)
 
 class HybridFamily(StrEnum):
     LEGACY_TO_CLOUD = "legacy_to_cloud"
@@ -55,19 +59,71 @@ def _load_family_catalogue(path: Path | None = None) -> dict[str, Any]:
         if not 1 <= int(family["entry_port"]) <= 65535:
             raise ValueError(f"invalid hybrid entry port: {name}")
     return catalogue
-
-
+    
 @dataclass(frozen=True, slots=True)
 class HybridGeneratorConfig:
-    decoy_hosts: int = 3
-    max_nodes: int = 40
-    max_vulnerabilities: int = 16
+    decoy_hosts: int
+    max_nodes: int
+    max_vulnerabilities: int
+    max_steps: int
+
+    @classmethod
+    def from_yaml(
+        cls,
+        path: Path | None = None,
+    ) -> "HybridGeneratorConfig":
+        config_path = (
+            path
+            or REPO_ROOT / "configs" / "hybrid_environment.yaml"
+        )
+
+        raw = yaml.safe_load(config_path.read_text())
+
+        if (
+            not isinstance(raw, dict)
+            or "hybrid_environment" not in raw
+        ):
+            raise ValueError(
+                "hybrid_environment configuration is required"
+            )
+
+        section = raw["hybrid_environment"]
+
+        if not isinstance(section, dict):
+            raise ValueError(
+                "hybrid_environment must be a mapping"
+            )
+
+        return cls(
+            decoy_hosts=int(section["decoy_hosts"]),
+            max_nodes=int(section["max_nodes"]),
+            max_vulnerabilities=int(
+                section["max_vulnerabilities"]
+            ),
+            max_steps=int(section["max_steps"]),
+        )
 
     def __post_init__(self) -> None:
         if self.decoy_hosts < 0:
-            raise ValueError("decoy_hosts cannot be negative")
+            raise ValueError(
+                "decoy_hosts cannot be negative"
+            )
+
         if self.max_nodes < 24 + self.decoy_hosts:
-            raise ValueError("max_nodes is too small for the generated hybrid graph")
+            raise ValueError(
+                "max_nodes is too small for "
+                "the generated hybrid graph"
+            )
+
+        if self.max_vulnerabilities <= 0:
+            raise ValueError(
+                "max_vulnerabilities must be positive"
+            )
+
+        if self.max_steps <= 0:
+            raise ValueError(
+                "max_steps must be positive"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,7 +154,7 @@ def generate_hybrid_enterprise(
     family_catalogue_path: Path | None = None,
 ) -> EnterpriseGraph:
     """Generate one hybrid graph from a structurally distinct family."""
-    config = config or HybridGeneratorConfig()
+    config = config or HybridGeneratorConfig.from_yaml()
     selected = HybridFamily(family) if family is not None else family_for_seed(seed)
     family_catalogue = _load_family_catalogue(family_catalogue_path)
     world_catalogue = load_world_catalogue()
@@ -257,19 +313,48 @@ class HybridCurriculumEnv(gym.Env):
         topology_seeds: tuple[int, ...] | list[int],
         *,
         config: HybridGeneratorConfig | None = None,
-        max_steps: int = 200,
+        max_steps: int | None = None,
     ) -> None:
         super().__init__()
+
         if not topology_seeds:
-            raise ValueError("at least one topology seed is required")
-        self.topology_seeds = tuple(int(seed) for seed in topology_seeds)
-        self.config = config or HybridGeneratorConfig()
-        self.max_steps = max_steps
+            raise ValueError(
+                "at least one topology seed is required"
+            )
+
+        self.topology_seeds = tuple(
+            int(seed) for seed in topology_seeds
+        )
+
+        self.config = (
+            config
+            or HybridGeneratorConfig.from_yaml()
+        )
+
+        self.max_steps = (
+            self.config.max_steps
+            if max_steps is None
+            else max_steps
+        )
+
+        if self.max_steps <= 0:
+            raise ValueError(
+                "max_steps must be positive"
+            )
+
         self.topology_seed = self.topology_seeds[0]
-        self.family = family_for_seed(self.topology_seed)
-        self._env = self._make(self.topology_seed)
+        self.family = family_for_seed(
+            self.topology_seed
+        )
+
+        self._env = self._make(
+            self.topology_seed
+        )
+
         self.action_space = self._env.action_space
-        self.observation_space = self._env.observation_space
+        self.observation_space = (
+            self._env.observation_space
+        )
 
     def _make(self, seed: int) -> EnterpriseCyberEnv:
         graph = generate_hybrid_enterprise(seed, config=self.config)

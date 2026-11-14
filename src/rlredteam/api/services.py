@@ -41,6 +41,13 @@ def selected_report_ids():
     }
 
 
+def approval_required():
+    value = os.environ.get("SECURITY_RL_REQUIRE_REPORT_APPROVAL", "0")
+    if value not in {"0", "1"}:
+        raise ValueError("approval policy must be 0 or 1")
+    return value == "1"
+
+
 class ReadOnlyRepository(Repository):
     def _connect(self):
         if not self.settings.complete:
@@ -58,6 +65,32 @@ class ReadOnlyRepository(Repository):
 
 
 class AnalystService:
+    def readiness(self):
+        from rlredteam.application.runtime_readiness import service_readiness
+
+        try:
+            required = approval_required()
+        except ValueError:
+            return {
+                "state": "CONFIGURATION_INVALID",
+                "overall": "BLOCKED",
+                "read_only": True,
+                "message": "Approval configuration must be 0 or 1",
+            }
+        return service_readiness(self.repository, selected_report_ids(), required)
+
+    def allowed_report_ids(self):
+        selected = selected_report_ids()
+        if selected and approval_required():
+            with self.repository._connect() as connection:
+                rows = connection.execute(
+                    "SELECT report_id FROM report_approvals WHERE report_id=ANY(%s) "
+                    "AND approved AND revoked_at IS NULL",
+                    (sorted(selected),),
+                ).fetchall()
+            return {r[0] for r in rows}
+        return selected
+
     def __init__(self, repository=None, snapshot_reader=None):
         self.repository = repository or ReadOnlyRepository()
         self.snapshot_reader = snapshot_reader or SnapshotReader()
@@ -69,7 +102,7 @@ class AnalystService:
         return self.snapshot_reader.entities()
 
     def simulations(self):
-        allowed = selected_report_ids()
+        allowed = self.allowed_report_ids()
         if not allowed:
             return {
                 "status": "UNAVAILABLE",
@@ -93,14 +126,14 @@ class AnalystService:
         return {"status": "AVAILABLE", "items": items}
 
     def reports(self):
-        allowed = selected_report_ids()
+        allowed = self.allowed_report_ids()
         if not allowed:
             return []
         return self.repository.attack_path_reports(limit=50, report_ids=allowed)
 
     def paths(self):
         # Stored, evidence-backed graphs, not newly computed omniscient paths.
-        allowed = selected_report_ids()
+        allowed = self.allowed_report_ids()
         if not allowed:
             return []
         graphs = self.repository.causal_attack_graphs(limit=50, report_ids=allowed)
@@ -143,9 +176,11 @@ class AnalystService:
         ]
 
     def graph(self, graph_id=None, node_type=None, relationship_type=None, search=None, limit=2000):
+        if approval_required() and self.readiness()["state"] != "EVIDENCE_READY":
+            raise RuntimeError("Evidence not ready; inspect /api/readiness")
         if not os.environ.get("NEO4J_URI"):
             raise RuntimeError("Neo4j not configured")
-        allowed = sorted(selected_report_ids())
+        allowed = sorted(self.allowed_report_ids())
         if not allowed:
             return GraphDTO(metadata={"detail": "No analyst reports selected"})
         store = Neo4jProjectionStore.connect(Neo4jSettings.from_env(), wait_seconds=0)

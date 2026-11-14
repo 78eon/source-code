@@ -18,6 +18,24 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
+it.each([
+  "DATABASE_UNAVAILABLE", "DATABASE_EMPTY", "REPORTS_AVAILABLE_NONE_APPROVED",
+  "APPROVED_REPORT_MISSING", "CAUSAL_GRAPH_MISSING", "NEO4J_PROJECTION_MISSING",
+  "PROJECTION_STALE", "PROJECTION_INCONSISTENT",
+])("shows %s without fetching substitute graph or starting actions", async (state) => {
+  vi.mocked(isTauri).mockReturnValue(false);
+  vi.mocked(get).mockImplementation(async (path) => {
+    if (path === "health") return {} as never;
+    if (path === "readiness") return { state, message: "Explicit evidence prerequisite required" } as never;
+    throw new Error("No data fetch permitted in blocked state");
+  });
+  render(<App />);
+  expect(await screen.findByText(state)).toBeTruthy();
+  expect(screen.queryByText("Graph workspace")).toBeNull();
+  expect(vi.mocked(get).mock.calls.every(([path]) => ["health", "readiness"].includes(path))).toBe(true);
+  expect(invoke).not.toHaveBeenCalled();
+});
+
 it("shows loading while graph request is pending", async () => {
   vi.mocked(get).mockResolvedValue([]);
   render(<App />);

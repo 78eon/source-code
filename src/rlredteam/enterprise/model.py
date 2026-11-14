@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
+from numbers import Real
 from typing import Any
 
 
@@ -72,6 +74,10 @@ class Vulnerability:
     description: str = "synthetic vulnerability"
 
     def __post_init__(self) -> None:
+        for name in ("cvss", "exploit_probability"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, Real) or not math.isfinite(value):
+                raise ValueError(f"{name} must be a finite numeric value")
         if not 0.0 <= self.cvss <= 10.0:
             raise ValueError("cvss must be between 0 and 10")
         if not 0.0 <= self.exploit_probability <= 1.0:
@@ -152,9 +158,7 @@ class TrueTopology:
     def children(self, node_id: str, *edge_types: EdgeType) -> set[str]:
         allowed = set(edge_types)
         return {
-            edge.target
-            for edge in self.outgoing(node_id)
-            if not allowed or edge.type in allowed
+            edge.target for edge in self.outgoing(node_id) if not allowed or edge.type in allowed
         }
 
     def parent_hosts(self, node_id: str) -> set[str]:

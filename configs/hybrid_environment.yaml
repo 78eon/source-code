@@ -1,0 +1,5 @@
+hybrid_environment:
+  decoy_hosts: 3
+  max_nodes: 40
+  max_vulnerabilities: 16
+  max_steps: 200

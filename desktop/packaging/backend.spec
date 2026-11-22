@@ -18,6 +18,8 @@ a = Analysis(
 )
 names = sorted(row[0] for row in a.pure)
 allowed = ('rlredteam.api', 'rlredteam.application.data', 'rlredteam.application.analyst_readers',
+           'rlredteam.application.registered_results', 'rlredteam.application.engineering_simulation',
+           'rlredteam.catalogue', 'rlredteam.cvss',
            'rlredteam.causal_graph', 'rlredteam.storage', 'rlredteam.digital_twin',
            'rlredteam.evidence', 'rlredteam.knowledge', 'rlredteam.catalogues', 'rlredteam.frameworks',
            'rlredteam.research_boundaries')  # Provenance enum only; no campaign behavior/data.

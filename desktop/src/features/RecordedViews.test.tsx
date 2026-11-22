@@ -84,3 +84,10 @@ describe("persisted evidence screens", () => {
     ).toBeNull();
   });
 });
+
+it("exposes persisted Twin snapshot identity and provenance", () => {
+  render(<TwinView summary={{status: "AVAILABLE", snapshot_id: "snapshot-test",
+    counts: {}, snapshot: {source: "persisted-test"}}} entities={[]} />);
+  expect(screen.getByText("Snapshot: snapshot-test")).toBeTruthy();
+  expect(screen.getByText(/persisted-test/, {selector: "pre"})).toBeTruthy();
+});

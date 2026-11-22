@@ -40,3 +40,13 @@ it("does not display a pending previous job response after the selected job chan
   expect(screen.queryByLabelText("Canonical evidence details")).toBeNull();
   expect((screen.getByText("Load canonical evidence") as HTMLButtonElement).disabled).toBe(false);
 });
+
+it("shows correlations loading instead of a premature empty state", async () => {
+  let finish!: (value: unknown) => void;
+  vi.mocked(get).mockImplementationOnce(() => new Promise(resolve => {finish = resolve;}));
+  render(<CanonicalWorkspace token="test" />);
+  expect(screen.getByText("Loading persisted correlations…")).toBeTruthy();
+  expect(screen.queryByText("No persisted canonical correlations available.")).toBeNull();
+  await act(async () => {finish({items: []});});
+  expect(screen.getByText("No persisted canonical correlations available.")).toBeTruthy();
+});

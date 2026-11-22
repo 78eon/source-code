@@ -15,6 +15,8 @@ export function TwinView({
   const counts = (summary.counts ?? {}) as Fact;
   return (
     <>
+      <p>Snapshot: {String(summary.snapshot_id ?? "Unavailable")}</p>
+      {summary.snapshot != null && <details><summary>Snapshot provenance</summary><pre>{JSON.stringify(summary.snapshot, null, 2)}</pre></details>}
       <div className="cards">
         {Object.entries({
           ...counts,

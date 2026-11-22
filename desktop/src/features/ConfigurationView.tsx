@@ -27,11 +27,15 @@ export function ConfigurationView({
   onSaved,
   onCancel,
   startupError,
+  settingsPath,
+  onPersisted,
 }: {
   initial: LocalSettings | null;
   onSaved: () => void;
   onCancel: () => void;
   startupError: string;
+  settingsPath?: string;
+  onPersisted?: (settings: LocalSettings, path: string) => void;
 }) {
   const [settings, setSettings] = useState<LocalSettings>(
     initial ?? offlineDemo,
@@ -40,14 +44,28 @@ export function ConfigurationView({
   const [error, setError] = useState(startupError),
     [busy, setBusy] = useState(false),
     [checks, setChecks] = useState("");
+  const [diagnosis,setDiagnosis]=useState<{stages:Record<string,string>;reason?:string;projection_count?:number}|null>(null);
+  async function diagnose() {
+    setBusy(true);setDiagnosis(null);
+    try {setDiagnosis(await invoke("desktop_configuration",{operation:"check",payload:{diagnostic:"neo4j"}}));}
+    catch {setError("Unable to check the saved Neo4j connection.");}
+    finally {setBusy(false);}
+  }
+  const [savedNotice, setSavedNotice] = useState("");
   async function save(open: boolean) {
     setBusy(true);
     setError("");
+    setChecks("");
+    setSavedNotice("");
     try {
-      await invoke("desktop_configuration", {
+      const saved = await invoke<{settings: LocalSettings; settings_path: string}>("desktop_configuration", {
         operation: "save",
         payload: { settings, passwords },
       });
+      if (!saved.settings || !saved.settings_path) throw "Settings save confirmation is missing. Reopen Settings before checking connections.";
+      setSettings(saved.settings);
+      onPersisted?.(saved.settings, saved.settings_path);
+      setSavedNotice(`Settings saved and read back from ${saved.settings_path}. Neo4j URI: ${saved.settings.neo4j?.uri ?? "not configured"}. Connection results below do not undo this save.`);
       setPasswords({ postgres: "", neo4j: "" });
       if (open) onSaved();
       else {
@@ -76,11 +94,14 @@ export function ConfigurationView({
       <p className="eyebrow">SECURITY-RL · LOCAL DESKTOP SETUP</p>
       <h1>Configure your analyst workspace</h1>
       <p>
-        Database services stay external. Passwords are stored in your OS
-        keyring, never in the settings JSON. Leaving a password blank keeps the
-        saved credential for that connection.
+        Connection details are stored locally. Credentials are protected using the operating system credential store and are not written to application settings.
       </p>
       {error && <p role="alert">{error}</p>}
+      <details><summary>Technical details</summary>{settingsPath && <p>Settings file: <code>{settingsPath}</code></p>}
+      {savedNotice && <p>{savedNotice}</p>}{checks && <pre role="status">{checks}</pre>}</details>
+      <button type="button" disabled={busy} onClick={()=>void diagnose()}>Diagnose saved Neo4j connection</button>
+      {diagnosis&&<section aria-label="Neo4j diagnostic"><dl>{Object.entries(diagnosis.stages).map(([k,v])=><div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>
+      <details><summary>Technical diagnostics</summary>{diagnosis.reason??`Readable projections: ${diagnosis.projection_count??0}`}</details></section>}
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -226,6 +247,11 @@ export function ConfigurationView({
         {settings.neo4j && (
           <fieldset>
             <legend>Neo4j — read-only account</legend>
+            <p>
+              Changing the Neo4j address, database or user requires entering its
+              password. A blank password reuses only a credential already saved
+              for those exact settings.
+            </p>
             {(["uri", "database", "user"] as const).map((key) => (
               <label key={key}>
                 Neo4j {key}
@@ -290,7 +316,7 @@ export function ConfigurationView({
         <button disabled={busy} type="button" onClick={onCancel}>
           Cancel
         </button>
-        {checks && <pre role="status">{checks}</pre>}
+
       </form>
     </main>
   );

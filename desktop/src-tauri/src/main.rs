@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod backend;
+mod export;
+use export::save_report;
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 type BackendState = Arc<Mutex<Option<backend::OwnedBackend>>>;
@@ -75,6 +77,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            save_report,
             backend_session,
             desktop_configuration
         ])

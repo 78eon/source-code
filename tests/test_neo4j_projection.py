@@ -65,3 +65,30 @@ def test_neo4j_settings_fail_closed(monkeypatch) -> None:
         monkeypatch.delenv(name, raising=False)
     with pytest.raises(MissingNeo4jCredentials):
         Neo4jSettings.from_env()
+
+
+def test_helper_relationships_have_explicit_projection_ownership():
+    from rlredteam.storage.neo4j_projection import _replace_projection
+
+    class Result:
+        def consume(self):
+            pass
+
+    class Transaction:
+        def __init__(self):
+            self.queries = []
+
+        def run(self, query, **parameters):
+            self.queries.append((query, parameters))
+            return Result()
+
+    tx = Transaction()
+    plan = build_projection_plan(build_causal_graph(causal_report(), causal_document()))
+    _replace_projection(tx, plan)
+    for kind in ("FROM", "TARGETS", "SUPPORTED_BY", "USES_TECHNIQUE"):
+        query = next(q for q, _ in tx.queries if f":{kind} " in q)
+        assert "graph_id: row.graph_id" in query
+        assert "projection_key: row.projection_key" in query
+    deletes = [(q, p) for q, p in tx.queries if "DELETE" in q]
+    assert len(deletes) == 1
+    assert deletes[0][1]["graph_id"] == plan.graph_id

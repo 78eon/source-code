@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["doctor", "migrate", "data"])
+    parser.add_argument("action", choices=["doctor", "migrate", "data", "development-fixture"])
     parser.add_argument("--report-id")
     parser.add_argument("--source", type=Path)
     parser.add_argument("--fixture", action="store_true")
@@ -19,6 +19,10 @@ def main():
         "--workspace", action="store_true", help="also migrate canonical workspace schemas"
     )
     args = parser.parse_args()
+    if args.action == "development-fixture":
+        if args.source is not None or args.report_id is not None:
+            parser.error("development-fixture accepts only the built-in engineering fixture")
+        args.fixture = True
     if args.workspace and args.action != "migrate":
         parser.error("--workspace requires migrate")
     try:
@@ -66,6 +70,8 @@ def main():
                 raise ValueError("choose explicit --fixture or --source; no automatic data")
             from rlredteam.storage.analytical_identity import require_hash
 
+            if args.action == "development-fixture":
+                args.report_id = report.report_id
             if args.report_id is None:
                 print(
                     json.dumps(
@@ -84,6 +90,26 @@ def main():
             AnalyticalStore(connection).ingest(
                 report, graph, lineage, source_sha256=source_hash, protocol_sha256=protocol_hash
             )
+            if args.action == "development-fixture":
+                from rlredteam.storage.analytical_lineage import rebuild_report
+                from rlredteam.storage.neo4j_projection import Neo4jProjectionStore
+                from rlredteam.application.runtime_readiness import inspect_stores
+
+                store = AnalyticalStore(connection)
+                if not store.is_approved(report.report_id):
+                    store.approve(report.report_id, approver_label="development operator",
+                                  reason="Explicit development fixture; not registered research",
+                                  source="engineering_fixture")
+                neo = Neo4jProjectionStore.connect(wait_seconds=0)
+                try:
+                    rebuild_report(connection, neo, report.report_id)
+                    readiness = inspect_stores(connection, neo, [report.report_id], True)
+                finally:
+                    neo.close()
+                print(json.dumps({"status": readiness["state"], "report_id": report.report_id,
+                                  "graph_id": graph.graph_id, "evidence_class": "engineering_fixture",
+                                  "research_status": "not_registered"}))
+                return 0 if readiness["state"] == "EVIDENCE_READY" else 1
             print(
                 json.dumps(
                     {
@@ -113,10 +139,9 @@ def main():
                 )
             )
             return 1
-        print(
-            '{"status":"BLOCKED","detail":"Check source, migration and service configuration; '
-            'scientific evidence unchanged"}'
-        )
+        print(json.dumps({"status": "BLOCKED", "error_type": type(exc).__name__,
+                          "code": getattr(exc, "code", None), "sqlstate": getattr(exc, "sqlstate", None),
+                          "detail": "Check source, migration and service configuration; scientific evidence unchanged"}))
         return 1
 
 

@@ -190,6 +190,31 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(debug_assertions)]
+    fn development_backend_needs_no_packaged_resource() {
+        // Other tests do not read this variable; do not spawn a backend.
+        let original = std::env::var_os("SECURITY_RL_BACKEND_PYTHON");
+        let python = std::env::current_exe().unwrap();
+        std::env::set_var("SECURITY_RL_BACKEND_PYTHON", &python);
+        let command = runtime_command(Path::new("/nonexistent-development-resources"));
+        match original {
+            Some(value) => std::env::set_var("SECURITY_RL_BACKEND_PYTHON", value),
+            None => std::env::remove_var("SECURITY_RL_BACKEND_PYTHON"),
+        }
+        let command = command.unwrap();
+        assert_eq!(command.get_program(), python.as_os_str());
+        assert_eq!(command.get_args().collect::<Vec<_>>(), vec!["-m", "rlredteam.api.owned_backend"]);
+        assert!(command.get_envs().any(|(key, value)|
+            key == "SECURITY_RL_USE_LOCAL_CONFIG" && value == Some(std::ffi::OsStr::new("1"))));
+    }
+
+    #[test]
+    #[cfg(not(debug_assertions))]
+    fn release_backend_requires_packaged_resource() {
+        assert!(runtime_command(Path::new("/nonexistent-release-resources")).is_err());
+    }
+
+    #[test]
     fn configuration_exit_is_bounded_and_reaped() {
         let mut child = Command::new("sleep").arg("30").spawn().unwrap();
         let start = Instant::now();

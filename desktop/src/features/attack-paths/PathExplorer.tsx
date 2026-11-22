@@ -1,3 +1,4 @@
+import { Fields, Mappings, EmptyState } from "../../components/EvidenceDisplay";
 import { useState, useEffect } from "react";
 import type { Fact } from "../../types";
 import { Details } from "../../components/Details";
@@ -12,6 +13,7 @@ export function PathExplorer({ paths }: { paths: Fact[] }) {
   const edges = (path?.edges ?? []) as Fact[];
   return (
     <>
+      {path&&<h2>Path summary</h2>}
       <label>
         Recorded path
         <select
@@ -57,14 +59,14 @@ export function PathExplorer({ paths }: { paths: Fact[] }) {
                 {String(edge.port ?? "Unknown")} /{" "}
                 {String(edge.protocol ?? "Unknown")}
               </p>
-              <p>
+              <div>
                 CVE: {String(edge.cve_id ?? "Unknown")} · Evidence:{" "}
-                {JSON.stringify(edge.evidence_ids ?? [])}
-              </p>
-              <p>MITRE: {JSON.stringify(edge.mitre_mappings ?? [])}</p>
+                <Fields value={edge.evidence_ids}/>
+              </div>
+              <Mappings value={edge.mitre_mappings}/>
             </article>
           ))}
-          {!paths.length && <p className="empty">No data available</p>}
+          {!paths.length && <EmptyState>No recorded paths are available for this selection.</EmptyState>}
         </section>
         <Details value={selected ?? path} />
       </div>

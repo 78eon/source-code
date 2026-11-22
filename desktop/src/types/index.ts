@@ -16,13 +16,17 @@ export interface GraphEdge {
   evidence_refs: string[];
 }
 export interface GraphDTO {
-  source: "neo4j";
+  source: "neo4j" | "engineering-simulation";
+  metadata?: Fact;
   graph_id: string | null;
   nodes: GraphNode[];
   edges: GraphEdge[];
 }
 export const pages = [
   "Dashboard",
+  "Registered Research",
+  "Simulations",
+  "Evidence",
   "Assets",
   "Network Graph",
   "Vulnerabilities",

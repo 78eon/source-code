@@ -1,3 +1,4 @@
+import { Fields } from "../components/EvidenceDisplay";
 import { useEffect, useRef, useState } from "react";
 import { get } from "../api/client";
 
@@ -19,6 +20,7 @@ export function CanonicalWorkspace({ token, importedJobId }: { token: string; im
   const [data, setData] = useState<unknown>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [correlationsLoading, setCorrelationsLoading] = useState(!importedJobId);
   const request = useRef<AbortController | null>(null);
   useEffect(() => {
     request.current?.abort(); setData(null); setLoading(false);
@@ -27,10 +29,12 @@ export function CanonicalWorkspace({ token, importedJobId }: { token: string; im
   useEffect(() => {
     const controller = new AbortController();
     setItems([]); setData(null); setError(""); setIdentifier("");
+    setCorrelationsLoading(!importedJobId);
     if (importedJobId) return () => controller.abort();
     get<{items: Correlation[]}>("workspace/correlations", token, controller.signal)
       .then(result => { if (!controller.signal.aborted) setItems(result.items); })
-      .catch(reason => { if (!controller.signal.aborted) setError(String(reason)); });
+      .catch(reason => { if (!controller.signal.aborted) setError(String(reason)); })
+      .finally(() => { if (!controller.signal.aborted) setCorrelationsLoading(false); });
     return () => controller.abort();
   }, [token, importedJobId]);
   async function load() {
@@ -70,7 +74,8 @@ export function CanonicalWorkspace({ token, importedJobId }: { token: string; im
     <button disabled={(!importedJobId && !identifier && section !== "jobs") || loading} onClick={() => void load()}>Load canonical evidence</button>
     {loading && <p role="status">Loading canonical evidence…</p>}
     {error && <p role="alert">{error}. No simulation or substitute data displayed.</p>}
-    {!importedJobId && !items.length && !error && <p>No persisted canonical correlations available.</p>}
-    {data !== null && <pre aria-label="Canonical evidence details">{JSON.stringify(data, null, 2)}</pre>}
+    {correlationsLoading && <p role="status">Loading persisted correlations…</p>}
+    {!importedJobId && !correlationsLoading && !items.length && !error && <p>No persisted canonical correlations available.</p>}
+    {data !== null && <section aria-label="Canonical evidence details"><Fields value={data}/><details><summary>View raw record</summary><pre>{JSON.stringify(data, null, 2)}</pre></details></section>}
   </section>;
 }

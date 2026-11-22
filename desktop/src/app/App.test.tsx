@@ -83,3 +83,32 @@ it("opens a configured native workspace through its owned backend", async () => 
   expect(await screen.findByText(/Demo profile ·/)).toBeTruthy();
   await waitFor(() => expect(get).toHaveBeenCalled());
 });
+
+it("loads registered research without requiring analyst database readiness", async () => {
+  vi.mocked(isTauri).mockReturnValue(false);
+  vi.mocked(get).mockImplementation(async path => {
+    if (path === "health") return {} as never;
+    if (path === "readiness") return {state: "DATABASE_UNAVAILABLE", message: "Offline"} as never;
+    if (path === "research/registered-results") return {schema_version: "registered-results-v1",
+      status: "AVAILABLE", read_only: true, aggregation: "per_policy", policies: [{training_seed: 7,
+        status: "AVAILABLE", successful_episodes: 20, episode_count: 20, success_rate: 1,
+        reward_rise: false, convergence_passed: false, final_test_evaluated: false}]} as never;
+    throw new Error("Unexpected endpoint");
+  });
+  render(<App />);
+  await screen.findByText("DATABASE_UNAVAILABLE");
+  await userEvent.click(screen.getByRole("button", {name: "Registered Research"}));
+  expect(await screen.findByText("20/20 / 100%")).toBeTruthy();
+  expect(screen.getByText("Pending / Not Evaluated")).toBeTruthy();
+  expect(screen.getAllByText("FAIL")).toHaveLength(2);
+});
+
+it("explains occurrence counts and report limits on the dashboard", async () => {
+  vi.mocked(isTauri).mockReturnValue(false);
+  vi.mocked(get).mockImplementation(async path => path === "readiness"
+    ? {state: "EVIDENCE_READY"} as never : [] as never);
+  render(<App />);
+  expect(await screen.findByText(/Counts include node occurrences/)).toBeTruthy();
+  expect(screen.getByText(/at most 50 stored graphs\/reports/)).toBeTruthy();
+  expect(screen.queryByText("No scanning or execution controls")).toBeNull();
+});

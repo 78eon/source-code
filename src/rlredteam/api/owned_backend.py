@@ -86,11 +86,11 @@ def entry():
     try:
         if len(sys.argv) == 3 and sys.argv[1] == "--config":
             payload = None
-            if sys.argv[2] == "save":
+            if sys.argv[2] in {"save", "check"}:
                 content = sys.stdin.buffer.read(32769)
                 if len(content) > 32768:
                     raise ConfigurationError("Settings request exceeds the size limit")
-                payload = json.loads(content)
+                payload = json.loads(content) if content else None
             print(json.dumps(command(sys.argv[2], payload)), flush=True)
             return 0
         return main()

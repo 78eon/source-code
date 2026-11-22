@@ -92,3 +92,18 @@ def test_graph_query_contract(client, query):
 
 def test_host_boundary(client):
     assert client.get("/api/health", headers={"host": "external.example"}).status_code == 400
+
+
+def test_registered_endpoint_is_authenticated_and_read_only(monkeypatch, tmp_path):
+    from rlredteam.application.registered_results import RegisteredResultsReader
+    monkeypatch.setenv("SECURITY_RL_API_TOKEN", "a" * 32)
+    client = TestClient(create_app(Service(), research_reader=RegisteredResultsReader(tmp_path)))
+    path = "/api/research/registered-results"
+    assert client.get(path).status_code == 401
+    headers = {"Authorization": "Bearer " + "a" * 32}
+    response = client.get(path, headers=headers)
+    assert response.status_code == 200
+    assert response.json()["status"] == "UNAVAILABLE"
+    assert response.json()["read_only"] is True
+    for method in ("post", "put", "patch", "delete"):
+        assert getattr(client, method)(path, headers=headers).status_code == 405

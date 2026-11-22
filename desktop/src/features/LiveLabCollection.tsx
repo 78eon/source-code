@@ -7,6 +7,8 @@ type Configuration = {enabled: boolean; profile?: string; budget?: unknown;
 type Plan = {plan_digest: string; scope_validated: boolean; budget: unknown};
 
 export function LiveLabCollection({token}: {token: string}) {
+  const [configLoading, setConfigLoading] = useState(true);
+  const [configError, setConfigError] = useState("");
   const [config, setConfig] = useState<Configuration | null>(null);
   const [scope, setScope] = useState("");
   const [target, setTarget] = useState("");
@@ -20,11 +22,13 @@ export function LiveLabCollection({token}: {token: string}) {
   const active = useRef<AbortController | null>(null);
   useEffect(() => {
     const abort = new AbortController();
+    setConfigLoading(true); setConfigError("");
     setConfig(null); setPlan(null); setApproved(false); setResult(null); setJob("");
     setScope(""); setTarget(""); setPorts(""); setBusy(false); setError("");
     get<Configuration>("workspace/live/configuration", token, abort.signal)
       .then(value => {if (!abort.signal.aborted) setConfig(value);})
-      .catch(() => {if (!abort.signal.aborted) setConfig({enabled: false});});
+      .catch(() => {if (!abort.signal.aborted) setConfigError("Live collection configuration unavailable. Backend request failed.");})
+      .finally(() => {if (!abort.signal.aborted) setConfigLoading(false);});
     return () => {abort.abort(); active.current?.abort();};
   }, [token]);
   function invalidate() {setPlan(null); setApproved(false); setError("");}
@@ -55,6 +59,8 @@ export function LiveLabCollection({token}: {token: string}) {
       if (!controller.signal.aborted) setError(String(reason));
     } finally {if (!controller.signal.aborted) setBusy(false);}
   }
+  if (configLoading) return <p role="status">Loading live collection configuration…</p>;
+  if (configError) return <p role="alert">{configError}</p>;
   if (!config?.enabled) return <p>LIVE_LAB collection is not configured/enabled by the backend. Manual XML import remains available.</p>;
   return <section aria-label="Controlled live lab collection">
     <h3>LIVE_LAB — controlled collection</h3>

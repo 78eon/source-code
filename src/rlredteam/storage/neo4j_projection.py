@@ -355,8 +355,8 @@ def _replace_projection(tx: Any, plan: ProjectionPlan) -> None:
         MATCH (f:CausalEdgeFact {projection_key: row.projection_key})
         MATCH (s:CausalNode {projection_key: row.source_key})
         MATCH (t:CausalNode {projection_key: row.target_key})
-        CREATE (f)-[:FROM]->(s)
-        CREATE (f)-[:TARGETS]->(t)
+        CREATE (f)-[:FROM {graph_id: row.graph_id, projection_key: row.projection_key}]->(s)
+        CREATE (f)-[:TARGETS {graph_id: row.graph_id, projection_key: row.projection_key}]->(t)
         """,
         rows=list(plan.edge_rows),
     ).consume()
@@ -366,7 +366,7 @@ def _replace_projection(tx: Any, plan: ProjectionPlan) -> None:
         MATCH (f:CausalEdgeFact {projection_key: row.projection_key})
         UNWIND row.evidence_keys AS evidence_key
         MATCH (e:CausalEvidence {projection_key: evidence_key})
-        CREATE (f)-[:SUPPORTED_BY]->(e)
+        CREATE (f)-[:SUPPORTED_BY {graph_id: row.graph_id, projection_key: row.projection_key}]->(e)
         """,
         rows=list(plan.edge_rows),
     ).consume()
@@ -376,7 +376,7 @@ def _replace_projection(tx: Any, plan: ProjectionPlan) -> None:
         MATCH (f:CausalEdgeFact {projection_key: row.projection_key})
         UNWIND row.mitre_technique_ids AS technique_id
         MATCH (t:CausalTechnique {graph_id: row.graph_id, technique_id: technique_id})
-        CREATE (f)-[:USES_TECHNIQUE]->(t)
+        CREATE (f)-[:USES_TECHNIQUE {graph_id: row.graph_id, projection_key: row.projection_key}]->(t)
         """,
         rows=list(plan.edge_rows),
     ).consume()

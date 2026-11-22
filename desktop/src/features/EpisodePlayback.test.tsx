@@ -41,3 +41,16 @@ it("synchronizes play speed, pause, timeline and event selection",()=>{
   expect(screen.getByText("Configured starting context")).toBeTruthy();
  }finally{vi.useRealTimers();}
 });
+
+it("presents independent results and a saved-value final summary",()=>{
+ const events=[{step:0,action_kind:"discover_network",target:"host-a",success:true,state_changed:true,detected:false,reward:1},{step:1,action_kind:"pivot",target:"host-b",success:false,state_changed:false,reward:-1}];
+ render(<EpisodePlayback model={{events,identity:{episode_id:"episode-selected"},registered:false}} data={{source:"neo4j",graph_id:"selected",nodes:[],edges:[]}}/>);
+ fireEvent.click(screen.getByRole("button",{name:"First"}));
+ expect(screen.getByText("Discovery")).toBeTruthy();
+ expect(screen.getByText("No detection recorded",{selector:"dd"})).toBeTruthy();
+ fireEvent.click(screen.getByRole("button",{name:"Last"}));
+ expect(screen.getByRole("article",{name:"Episode complete"})).toBeTruthy();
+ expect(screen.getByRole("article",{name:"Current step summary"}).textContent).toContain("Failed");
+ fireEvent.click(screen.getByText("Episode identity and evidence"));
+ expect(screen.getAllByText("host-b",{selector:"dd"})[0]).toBeTruthy();
+});

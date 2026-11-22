@@ -409,3 +409,8 @@ caption {text-align:left;font-weight:650;padding:10px}
 .simple-label{display:block;max-width:125px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;margin-top:8px}
 @media(max-width:1050px){.simple-map-body{grid-template-columns:1fr}.simple-map-zones{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .tier-lanes{display:grid;gap:12px}.tier-lane{border-left:2px solid #37586c;padding-left:10px}.tier-lane>small{color:#aac8d5}.group-handle{display:block;cursor:grab;font-size:11px;color:#89a8ba;touch-action:none;padding:5px}.simple-zone{position:relative;transition:none}.simple-map-zones{align-items:start}
+.replay-crown{display:flex;align-items:center;gap:.6rem;padding:12px 16px;border:1px solid #8b744d;border-radius:8px;margin:12px 0}
+.replay-crown>span:first-child{color:#e5c179;font-size:24px}.replay-position{font-variant-numeric:tabular-nums;color:#b6cbd5}
+.replay-badges{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.replay-current .facts,.replay-complete .facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+[aria-label="Recorded episode replay"] tr[aria-current=step]{background:#254738;outline:1px solid #91c7ad;outline-offset:-1px}

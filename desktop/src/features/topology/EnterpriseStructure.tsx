@@ -6,7 +6,7 @@ import { Fields, Mappings } from "../../components/EvidenceDisplay";
 type Node = { id:string; name:string; type:string; attributes:Fact };
 type Edge = { source:string; target:string; type:string };
 export type AssessmentTopology = {
-  identity?:Fact; presentation?:unknown; topology:Fact; specification:SimulationSpec;
+  recordedFindings?:number; identity?:Fact; presentation?:unknown; topology:Fact; specification:SimulationSpec;
   episodes:{events:Fact[];goal_reached:boolean}[];
 };
 const unknown = "Not recorded";

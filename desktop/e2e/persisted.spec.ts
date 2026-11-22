@@ -35,6 +35,12 @@ test("persisted graph renders with Sigma and all readers show recorded evidence"
     .fill("desktop-integration-fixture-token-0001");
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(page.getByText("CONNECTED", { exact: true })).toBeVisible();
+  await expect(page.getByText("Current workspace", {exact:true})).toBeVisible();
+  await page.screenshot({path:"test-results/dashboard.png"});
+  await page.getByRole("button",{name:"Vulnerabilities",exact:true}).click();
+  await expect(page.getByRole("heading",{name:"Vulnerabilities",exact:true})).toBeVisible();
+  await expect(page.getByText("Loading recorded evidence…")).toHaveCount(0);
+  await page.screenshot({path:"test-results/vulnerabilities.png"});
   await page
     .getByRole("button", { name: "Network Graph", exact: true })
     .click();
@@ -45,21 +51,18 @@ test("persisted graph renders with Sigma and all readers show recorded evidence"
     )
     .toBeGreaterThan(0);
   await expect(page.getByRole("alert")).toHaveCount(0);
-  const canvas = page.locator(".canvas");
-  const bounds = await canvas.boundingBox();
-  if (!bounds) throw new Error("No graph viewport");
-  // The fixture's four nodes use the deterministic circular presentation layout.
-  const radius = (Math.min(bounds.width, bounds.height) - 60) / 2;
-  await canvas.click({
-    position: { x: bounds.width / 2 + radius, y: bounds.height / 2 },
-  });
-  await expect(page.locator("pre")).toContainText("host-a");
-  // Separate single clicks from Sigma's double-click-to-zoom gesture.
-  await page.waitForTimeout(400);
-  await canvas.click({
-    position: { x: bounds.width / 2 + radius / 2, y: bounds.height / 2 },
-  });
-  await expect(page.locator("pre")).toContainText("evidence_refs");
+  await page.getByText("Inspect by name",{exact:true}).click();
+  await page.getByLabel("Inspect node",{exact:true}).selectOption("host-a");
+  await expect(page.locator(".details pre")).toContainText("host-a");
+  await page.getByLabel("Inspect relationship",{exact:true}).selectOption({index:1});
+  await expect(page.locator(".details pre")).toContainText("evidence_refs");
+  await page.getByLabel("Graph mode").selectOption("Topology");
+  await expect(page.getByText("Enterprise Topology Structure",{exact:true})).toBeVisible();
+  await page.getByLabel("Graph mode").selectOption("Attack / Provenance");
+  await expect(page.locator("canvas.sigma-nodes")).toBeVisible();
+  await page.getByLabel("Graph mode").selectOption("Combined");
+  await expect(page.getByText("Topology Profile",{exact:true})).toBeVisible();
+  await page.getByLabel("Graph mode").selectOption("Evidence");
   await page.getByLabel("Search", { exact: true }).fill("host-b");
   await page.getByLabel("Node type").selectOption("service");
   await expect(page.getByLabel("Node type")).toHaveValue("service");
@@ -77,8 +80,9 @@ test("persisted graph renders with Sigma and all readers show recorded evidence"
   await page.getByRole("button", { name: "Attack Paths", exact: true }).click();
   await page.getByLabel("Recorded path").selectOption({ index: 1 });
   await expect(
-    page.getByText("AUTHENTICATED_TO", { exact: true }),
+    page.getByRole("heading",{name:"AUTHENTICATED_TO",exact:true}),
   ).toBeVisible();
+  await page.screenshot({path:"test-results/attack-paths.png"});
   await page.getByRole("button", { name: "Digital Twin", exact: true }).click();
   await expect(
     page.getByText("Persisted snapshot", { exact: false }),

@@ -1,19 +1,31 @@
+import { EmptyState } from "../components/EvidenceDisplay";
 import { useEffect, useState } from "react";
 import { configureOrigin, get } from "../api/client";
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { pages, type Page, type Fact, type GraphDTO } from "../types";
+import { type Page, type Fact, type GraphDTO } from "../types";
 import { RecordBrowser } from "../components/RecordBrowser";
 import { GraphWorkspace } from "../features/topology/GraphWorkspace";
 import { PathExplorer } from "../features/attack-paths/PathExplorer";
 import { TwinView, SimulationView } from "../features/RecordedViews";
+import { RegisteredResearchView, type RegisteredResults } from "../features/RegisteredResearchView";
+import { AssessmentOperations } from "../features/AssessmentOperations";
+import { EngineeringSimulations } from "../features/EngineeringSimulations";
 import { LabInput } from "../features/LabInput";
 import { CanonicalWorkspace } from "../features/CanonicalWorkspace";
 import {
   ConfigurationView,
   type LocalSettings,
 } from "../features/ConfigurationView";
+const navigation = {
+  Workspace: ["Dashboard","Registered Research","Simulations"],
+  Analysis: ["Evidence","Assets","Network Graph","Vulnerabilities","Attack Paths"],
+  System: ["Digital Twin","Simulation","Reports"],
+} satisfies Record<string,Page[]>;
 const endpoints: Record<Page, string> = {
   Dashboard: "assets",
+  "Registered Research": "research/registered-results",
+  Simulations: "engineering-simulations/status",
+  Evidence: "reports",
   Assets: "assets",
   "Network Graph": "graph/topology",
   Vulnerabilities: "findings",
@@ -23,12 +35,17 @@ const endpoints: Record<Page, string> = {
   Reports: "reports",
 };
 export function App() {
+  const [assessmentId,setAssessmentId]=useState<string|null>(null);
+  const [selectedPublication,setSelectedPublication]=useState<Fact|null>(null);
+  const [openTrajectories,setOpenTrajectories]=useState(false);
+  const [engineeringTab,setEngineeringTab] = useState<"new"|"saved"|"runs"|"examples">("saved");
   const [showLabInput, setShowLabInput] = useState(false);
   const [showCanonical, setShowCanonical] = useState(false);
   const native = isTauri();
   const [backendReady, setBackendReady] = useState(!native);
   const [startupError, setStartupError] = useState("");
   const [settings, setSettings] = useState<LocalSettings | null>(null);
+  const [settingsPath, setSettingsPath] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [sessionGeneration, setSessionGeneration] = useState(0);
   const [page, setPage] = useState<Page>("Dashboard"),
@@ -40,17 +57,19 @@ export function App() {
     [health, setHealth] = useState("OFFLINE"),
     [error, setError] = useState(""),
     [loading, setLoading] = useState(false);
+  const [storedGraphs,setStoredGraphs]=useState<number|null>(null);
   const [runtimeState, setRuntimeState] = useState<{state: string; message: string} | null>(null);
   useEffect(() => {
     if (!native) return;
     let active = true;
-    invoke<{ configured: boolean; settings: LocalSettings | null }>(
+    invoke<{ configured: boolean; settings: LocalSettings | null; settings_path?: string }>(
       "desktop_configuration",
       { operation: "get" },
     )
       .then(async (configuration) => {
         if (!active) return null;
         setSettings(configuration.settings);
+        setSettingsPath(configuration.settings_path ?? "");
         if (!configuration.configured) {
           setShowSettings(true);
           return null;
@@ -82,6 +101,7 @@ export function App() {
     setEntities([]);
     setError("");
     setRuntimeState(null);
+    setStoredGraphs(null);
     setLoading(true);
     (async () => {
       try {
@@ -98,7 +118,17 @@ export function App() {
         return;
       }
       try {
-        const readiness = await get<{state?: string; message?: string}>("readiness", token, abort.signal);
+        if (page === "Simulations") {setHealth("CONNECTED");return;}
+        if (page === "Registered Research") {
+          const result = await get<RegisteredResults>(endpoints[page], token, abort.signal);
+          if (!abort.signal.aborted) {
+            setData(result);
+            setHealth(result.status === "AVAILABLE" ? "CONNECTED" : "DEGRADED");
+          }
+          return;
+        }
+        if(assessmentId&&["Dashboard","Vulnerabilities","Assets","Attack Paths","Reports","Evidence"].includes(page)){setHealth("CONNECTED");return;}
+        const readiness = await get<{state?: string; message?: string; graphs?:number}>("readiness", token, abort.signal);
         if (readiness?.state && readiness.state !== "EVIDENCE_READY") {
           if (!abort.signal.aborted) {
             setRuntimeState({state: readiness.state, message: readiness.message ?? "Evidence not ready"});
@@ -106,7 +136,10 @@ export function App() {
           }
           return;
         }
-        const result = await get<unknown>(endpoints[page], token, abort.signal);
+        if(!abort.signal.aborted && typeof readiness?.graphs==="number") setStoredGraphs(readiness.graphs);
+        const bound=page==="Network Graph"?selectedPublication:null;
+        const result = await get<unknown>(endpoints[page]+(bound?"?graph_id="+encodeURIComponent(String(bound.graph_id)):""), token, abort.signal);
+        if(bound&&((result as GraphDTO).graph_id!==bound.graph_id||((result as GraphDTO).metadata?.projection as Fact)?.report_id!==bound.report_id)) throw Error("Selected projection unavailable. Add its report ID to the approved selection in Settings and reconnect.");
         const twinEntities =
           page === "Digital Twin"
             ? await get<Fact[]>("digital-twin/entities", token, abort.signal)
@@ -133,12 +166,14 @@ export function App() {
       }
     })();
     return () => abort.abort();
-  }, [page, token, reload, backendReady]);
+  }, [page, token, reload, backendReady,selectedPublication,assessmentId]);
   const rows = Array.isArray(data) ? (data as Fact[]) : [];
   if (native && showSettings)
     return (
       <ConfigurationView
         initial={settings}
+        settingsPath={settingsPath}
+        onPersisted={(saved, path) => {setSettings(saved); setSettingsPath(path);}}
         startupError={startupError}
         onCancel={() => {
           setShowSettings(false);
@@ -160,8 +195,7 @@ export function App() {
         <div className="brand">
           SECURITY<span>RL / ANALYST</span>
         </div>
-        <p className="eyebrow">WORKSPACE</p>
-        {pages.map((p) => (
+        {Object.entries(navigation).map(([group,items])=><div className="nav-group" key={group}><p className="eyebrow">{group}</p>{items.map((p) => (
           <button
             key={p}
             aria-current={page === p ? "page" : undefined}
@@ -172,17 +206,21 @@ export function App() {
                 setData(null);
                 setError("");
                 setLoading(true);
-                setPage(p);
+                setOpenTrajectories(false);setPage(p);
               }
             }}
           >
             {p}
           </button>
-        ))}
+        ))}</div>)}
+        <div className="simulation-subnav" aria-label="Simulation navigation">
+          {([["examples","Example Scenarios"],["new","New Simulation"],["saved","Saved Simulations"],["runs","Simulation Runs"]] as const).map(([tab,label]) =>
+            <button key={tab} onClick={()=>{setShowCanonical(false);setShowLabInput(false);setEngineeringTab(tab);setPage("Simulations");}}>{label}</button>)}
+        </div>
         <footer>
-          Read-only analyst workspace
+          Analyst workspace
           <br />
-          No scanning or execution controls
+          Evidence browsing · Lab collection requires backend authorization and explicit approval
         </footer>
       </nav>
       <main>
@@ -238,7 +276,9 @@ export function App() {
           <CanonicalWorkspace token={token} />
         ) : showLabInput ? (
           <LabInput token={token} allowOfflineProcessing />
-        ) : loading ? (
+        ) : page === "Simulations" ? (
+          <EngineeringSimulations token={token} initialTab={engineeringTab} onSelection={(id,identity)=>{setAssessmentId(id);setSelectedPublication(identity);}} onOperations={id=>{setAssessmentId(id);setPage("Dashboard");}} onGraph={g=>{setSelectedPublication(g);setPage("Network Graph");}} onResearch={()=>{setOpenTrajectories(true);setPage("Registered Research");}} />
+        ) : assessmentId&&["Dashboard","Vulnerabilities","Assets","Attack Paths","Reports","Evidence"].includes(page) ? (<AssessmentOperations id={assessmentId} page={page} token={token}/>) : loading ? (
           <p className="empty">Loading recorded evidence…</p>
         ) : error ? (
           <section className="notice" role="alert">
@@ -252,35 +292,41 @@ export function App() {
             <p>{runtimeState.message}</p>
             <p>No substitute evidence is displayed. No automatic repair or acquisition was started.</p>
           </section>
+        ) : page === "Registered Research" && data ? (
+          <RegisteredResearchView openTrajectories={openTrajectories} data={data as RegisteredResults} token={token} />
         ) : page === "Network Graph" && data ? (
-          <GraphWorkspace data={data as GraphDTO} />
+          <>{selectedPublication&&<p>Selected assessment: {String(selectedPublication.assessment)} · Report: {String(selectedPublication.report_id)} · Graph: {String(selectedPublication.graph_id)}</p>}<GraphWorkspace key={(data as GraphDTO).graph_id} data={data as GraphDTO} token={token} /></>
         ) : page === "Dashboard" ? (
           <>
+            <p>No engineering assessment selected. Open a saved assessment to select its Security Operations workspace.</p><details><summary>Canonical database counters</summary>
             <div className="cards">
               {[
-                ["Recorded graph nodes", data ? rows.length : null],
+                ["Selected graph-node occurrences", data ? rows.length : null],
                 ["Critical assets", null],
                 [
-                  "Services",
+                  "Service-node occurrences",
                   data
                     ? rows.filter(
                         (r) => String(r.node_type).toLowerCase() === "service",
                       ).length
                     : null,
                 ],
-                ["Crown-jewel assets", null],
+                ["Stored graphs", storedGraphs], ["Recorded finding occurrences", Array.isArray(data) && rows.every(r=>Array.isArray(r.discovered_vulnerabilities)) ? rows.reduce((n,r)=>n+(r.discovered_vulnerabilities as unknown[]).length,0) : null], ["Recorded paths", null],
               ].map(([k, v]) => (
                 <section className="card" key={String(k)}>
                   <h3>{k}</h3>
-                  <strong>{v ?? "—"}</strong>
+                  <strong>{v ?? "Not available"}</strong>
                   <p>
                     {v === null ? "No data available" : "From stored evidence"}
                   </p>
                 </section>
               ))}
             </div>
-            <section className="notice">
-              <h2>Analyst overview</h2>
+            </details><section className="notice">
+              <p>Counts include node occurrences across selected stored graphs; repeated assets may occur.
+                Reads include at most 50 stored graphs/reports. Completeness and truncation are unknown.
+                Empty selections do not establish an empty environment.</p>
+              <h2>Current workspace</h2><p>Analyst evidence · selected stored reports and graph projections</p>
               <p>
                 Explore recorded assets, findings and attack paths. Unknown risk
                 and applicability remain unknown. Simulation replay shows stored
@@ -294,17 +340,17 @@ export function App() {
           <SimulationView data={data as Fact} />
         ) : page === "Attack Paths" ? (
           <PathExplorer paths={rows} />
-        ) : (
+        ) : page === "Vulnerabilities" && !rows.length ? <EmptyState>No recorded vulnerability findings are available for the current canonical selection.<br/>This does not establish that the environment is vulnerability-free.</EmptyState> : page === "Assets" && !rows.length ? <EmptyState>No assets are recorded in this selection.</EmptyState> : (
           <RecordBrowser
             rows={rows}
+            assessment={page==="Reports"}
+            headers={page === "Assets" ? {id:"Asset",node_type:"Type",current_access_level:"Access",evidence_ids:"Evidence"} : page === "Vulnerabilities" ? {vulnerability_id:"ID",asset_id:"Asset",cvss:"CVSS",evidence_refs:"Evidence"} : {}}
             columns={
               page === "Assets"
                 ? ["id", "node_type", "current_access_level", "evidence_ids"]
                 : page === "Vulnerabilities"
                   ? [
-                      "id",
-                      "asset_id",
-                      "vulnerability_id",
+                      "vulnerability_id", "asset_id", "severity",
                       "cvss",
                       "applicability",
                       "evidence_refs",

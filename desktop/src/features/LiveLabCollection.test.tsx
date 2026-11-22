@@ -40,3 +40,17 @@ it("requires a backend plan and operator confirmation, then invalidates approval
   expect(screen.queryByText("Collect approved inventory")).toBeNull();
   expect(post).toHaveBeenCalledTimes(1);
 });
+
+it("distinguishes pending configuration from a disabled backend", () => {
+  vi.mocked(get).mockImplementationOnce(() => new Promise(() => {}));
+  render(<LiveLabCollection token="test" />);
+  expect(screen.getByText("Loading live collection configuration…")).toBeTruthy();
+  expect(screen.queryByText(/not configured\/enabled/)).toBeNull();
+});
+it("surfaces configuration request errors without claiming collection is disabled", async () => {
+  vi.mocked(get).mockRejectedValue(new Error("unavailable"));
+  render(<LiveLabCollection token="test" />);
+  expect((await screen.findByRole("alert")).textContent).toContain("Backend request failed");
+  expect(screen.queryByText(/not configured\/enabled/)).toBeNull();
+  expect(post).not.toHaveBeenCalled();
+});

@@ -190,14 +190,8 @@ class AnalystService:
                 def read(tx):
                     nonlocal graph_id
                     if graph_id is None:
-                        row = tx.run(
-                            "MATCH (g:CausalProjection) WHERE g.report_id IN $reports "
-                            "RETURN g.graph_id AS id ORDER BY id LIMIT 1",
-                            reports=allowed,
-                        ).single()
-                        if row is None:
-                            return GraphDTO()
-                        graph_id = row["id"]
+                        return GraphDTO(metadata={"state": "projection_selection_required",
+                                                  "detail": "Select an explicit graph ID"})
                     projection = tx.run(
                         "MATCH (g:CausalProjection {graph_id:$id}) "
                         "WHERE g.report_id IN $reports RETURN g",
@@ -205,7 +199,7 @@ class AnalystService:
                         reports=allowed,
                     ).single()
                     if projection is None:
-                        return GraphDTO(graph_id=graph_id)
+                        return GraphDTO(graph_id=graph_id, metadata={"state": "projection_missing"})
                     projection = dict(projection["g"])
                     if (
                         projection.get("hidden_topology_used") is not False

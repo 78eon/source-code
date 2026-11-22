@@ -32,6 +32,9 @@ migrate-workspace:
 desktop-doctor:
 	python3 -B scripts/verify_registered_boundary.py
 	$(ANALYTICAL_OPERATOR) run --rm -T operator doctor
+.PHONY: development-fixture
+development-fixture:
+	$(ANALYTICAL_OPERATOR) run --rm -T operator development-fixture
 desktop-data:
 	$(ANALYTICAL_OPERATOR) run --rm -T operator data --fixture $(if $(REPORT_ID),--report-id "$(REPORT_ID)",)
 neo4j-rebuild-report:
@@ -305,8 +308,13 @@ reward-components-verify: ## Verify Phase 18 policies, pairing and frozen inputs
 
 # Desktop dependencies stay inside Podman, separate from the frozen training image.
 DESKTOP_IMAGE := localhost/security-rl-desktop-builder:dev
+# Host-network development uses the published Bolt endpoint, not Compose DNS.
+DESKTOP_NEO4J_URI ?= bolt://127.0.0.1:7687
 comma := ,
 TWIN_SNAPSHOT_ARGS = $(if $(SECURITY_RL_TWIN_SNAPSHOT),-e SECURITY_RL_TWIN_SNAPSHOT=/app/analyst-twin.json -v "$(SECURITY_RL_TWIN_SNAPSHOT):/app/analyst-twin.json:ro$(comma)z",)
+# Metadata is mounted read-only without relabeling frozen evidence.
+REGISTERED_CAMPAIGN = $(or $(SECURITY_RL_REGISTERED_CAMPAIGN),$(CURDIR)/docs/research_evidence/MASTER_PROJECT_AUDIT/01_REGISTERED_CAMPAIGN/onprem-generalisation-registered)
+REGISTERED_CAMPAIGN_ARGS = $(if $(shell test -f "$(REGISTERED_CAMPAIGN)/protocol_manifest.json" && echo present),-e SECURITY_RL_REGISTERED_CAMPAIGN=/app/registered-campaign -v "$(REGISTERED_CAMPAIGN):/app/registered-campaign:ro",)
 DESKTOP_RUN = podman run --rm --cpus 2 --memory 6g --pids-limit 512 -v security-rl-desktop-cargo:/usr/local/cargo/registry -v "$(CURDIR)/desktop:/app/desktop:rw,z" -w /app/desktop $(DESKTOP_IMAGE)
 
 desktop-image:
@@ -318,27 +326,59 @@ desktop-install: desktop-image
 desktop-check:
 	$(DESKTOP_RUN) sh -c 'npm run typecheck && npm test && npm run build && cd src-tauri && cargo check --locked && cargo test --locked'
 
+.PHONY: desktop-engineering-check
+desktop-engineering-check:
+	podman run --rm --pull=never --network none --cap-drop ALL --security-opt no-new-privileges \
+		-e PYTHONPATH=/app/src -e PYTHONDONTWRITEBYTECODE=1 \
+		-v "$(CURDIR)/src:/app/src:ro" \
+		-v "$(CURDIR)/configs/catalogues:/app/configs/catalogues:ro" \
+		-v "$(CURDIR)/configs/engineering_simulations:/app/configs/engineering_simulations:ro" \
+		-v "$(CURDIR)/desktop:/app/desktop:rw" -w /app/desktop \
+		$(DESKTOP_IMAGE) /opt/analyst-python/bin/python -B check-engineering.py
+
+.PHONY: desktop-research-trajectories-check
+desktop-research-trajectories-check:
+	@test -f "$(REGISTERED_CAMPAIGN)/protocol_manifest.json" || { echo "Registered campaign archive is required"; exit 1; }
+	podman run --rm --pull=never --network none --cap-drop ALL --security-opt no-new-privileges $(REGISTERED_CAMPAIGN_ARGS) \
+		-e PYTHONPATH=/app/src -e PYTHONDONTWRITEBYTECODE=1 \
+		-v "$(CURDIR)/src:/app/src:ro" \
+		-v "$(CURDIR)/configs/catalogues:/app/configs/catalogues:ro" \
+		-v "$(CURDIR)/desktop:/app/desktop:rw" -w /app/desktop \
+		$(DESKTOP_IMAGE) /opt/analyst-python/bin/python -B check-research-trajectories.py
+
 desktop-build:
 	$(DESKTOP_RUN) npm run tauri -- build --debug --no-bundle
 
 desktop-dev:
 	@test -n "$$DISPLAY" || { echo "DISPLAY is required"; exit 1; }
 	@test -f "$$XAUTHORITY" || { echo "Set XAUTHORITY to your display cookie file"; exit 1; }
-	podman run --rm --network host --userns keep-id --cap-drop ALL --security-opt no-new-privileges $(TWIN_SNAPSHOT_ARGS) \
+	@test -n "$$XDG_RUNTIME_DIR" && test -S "$$XDG_RUNTIME_DIR/bus" || { echo "Host session D-Bus socket is required"; exit 1; }
+	@test "$$DBUS_SESSION_BUS_ADDRESS" = "unix:path=$$XDG_RUNTIME_DIR/bus" || { echo "Use the host Unix session D-Bus address"; exit 1; }
+	@umask 077; mkdir -p "$${XDG_CONFIG_HOME:-$$HOME/.config}/org.securityrl.analyst"
+	@umask 077; mkdir -p "$$HOME/Downloads/Security-RL"
+	podman run --rm -e SECURITY_RL_EXPORT_DIRECTORY="$$HOME/Downloads/Security-RL" -v "$$HOME/Downloads/Security-RL:$$HOME/Downloads/Security-RL:rw" --network host --user 0:0 --cap-drop ALL --security-opt no-new-privileges $(TWIN_SNAPSHOT_ARGS) $(REGISTERED_CAMPAIGN_ARGS) \
 		-e DISPLAY -e XAUTHORITY=/tmp/desktop.xauth \
+		-e DBUS_SESSION_BUS_ADDRESS -e XDG_RUNTIME_DIR -e SECURITY_RL_DBUS_AUTH_UID="$$(id -u)" \
+		-e XDG_CONFIG_HOME=/app/desktop-config \
+		-e SECURITY_RL_ENGINEERING_SIMULATION_STATE=/app/engineering-simulations \
+		-v security-rl-engineering-simulations:/app/engineering-simulations:rw \
+		-v "$(CURDIR)/data/cve_catalogue.sqlite:/app/data/cve_catalogue.sqlite:ro" \
+		-v "$${XDG_CONFIG_HOME:-$$HOME/.config}/org.securityrl.analyst:/app/desktop-config/org.securityrl.analyst:rw" \
+		--tmpfs "$$XDG_RUNTIME_DIR:rw,mode=700" -v "$$XDG_RUNTIME_DIR/bus:$$XDG_RUNTIME_DIR/bus:ro" \
 		-e POSTGRES_HOST -e POSTGRES_PORT -e POSTGRES_USER -e POSTGRES_PASSWORD -e POSTGRES_DB \
-		-e NEO4J_URI -e NEO4J_USER -e NEO4J_PASSWORD -e SECURITY_RL_ANALYST_REPORT_IDS \
+		-e NEO4J_URI="$(DESKTOP_NEO4J_URI)" -e NEO4J_USER -e NEO4J_PASSWORD -e SECURITY_RL_ANALYST_REPORT_IDS \
 		-v "$$XAUTHORITY:/tmp/desktop.xauth:ro" -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
 		-v "$(CURDIR)/src:/app/src:ro,z" \
 		-v "$(CURDIR)/configs/catalogues:/app/configs/catalogues:ro,z" \
-		-v "$(CURDIR)/desktop:/app/desktop:rw,z" -w /app/desktop $(DESKTOP_IMAGE) npm run tauri -- dev
+		-v "$(CURDIR)/configs/engineering_simulations:/app/configs/engineering_simulations:ro" \
+		-v "$(CURDIR)/desktop:/app/desktop:rw,z" -w /app/desktop $(DESKTOP_IMAGE) npm run tauri -- dev --config src-tauri/tauri.dev.conf.json
 
 api-image:
 	podman build -t localhost/security-rl-desktop-api:dev -f Containerfile.api .
 
 api-dev:
 	@test -n "$$SECURITY_RL_API_TOKEN" || { echo "Set SECURITY_RL_API_TOKEN (32+ characters)"; exit 1; }
-	podman run --rm --network host --cap-drop ALL --security-opt no-new-privileges $(TWIN_SNAPSHOT_ARGS) \
+	podman run --rm --network host --cap-drop ALL --security-opt no-new-privileges $(TWIN_SNAPSHOT_ARGS) $(REGISTERED_CAMPAIGN_ARGS) \
 		-e SECURITY_RL_REQUIRE_REPORT_APPROVAL=1 \
 		-e SECURITY_RL_API_TOKEN -e POSTGRES_HOST -e POSTGRES_PORT -e POSTGRES_USER -e POSTGRES_PASSWORD -e POSTGRES_DB \
 		-e NEO4J_URI -e NEO4J_USER -e NEO4J_PASSWORD -e SECURITY_RL_ANALYST_REPORT_IDS \

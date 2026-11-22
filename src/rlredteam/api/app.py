@@ -7,11 +7,20 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
+from rlredteam.application.registered_results import RegisteredResults, RegisteredResultsReader
+
 from .services import AnalystService
 
 
 def create_app(
-    service=None, *, lab_input_service=None, workspace_service=None, assessment_runner=None
+    service=None,
+    *,
+    lab_input_service=None,
+    workspace_service=None,
+    assessment_runner=None,
+    research_reader=None,
+    simulation_service=None,
+    trajectory_reader=None,
 ):
     app = FastAPI(title="Security-RL Analyst", docs_url=None, redoc_url=None, openapi_url=None)
     service = service or AnalystService()
@@ -67,6 +76,10 @@ def create_app(
     @app.get("/api/readiness", dependencies=auth)
     def readiness():
         return invoke(service.readiness)
+
+    @app.get("/api/research/registered-results", dependencies=auth, response_model=RegisteredResults)
+    def registered_results():
+        return invoke((research_reader or RegisteredResultsReader()).read)
 
     @app.get("/api/assets", dependencies=auth)
     def assets():
@@ -140,6 +153,12 @@ def create_app(
     from .live_collection import router as live_router
 
     app.include_router(live_router(assessment_runner, authorize))
+    from .engineering_simulations import router as simulation_router
+
+    app.include_router(simulation_router(authorize, simulation_service))
+    from .research_trajectories import router as trajectory_router
+
+    app.include_router(trajectory_router(authorize, trajectory_reader))
     return app
 
 

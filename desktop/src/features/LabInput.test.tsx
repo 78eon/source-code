@@ -96,3 +96,13 @@ it("opens imported assessment views while keeping manual notes out of the API pa
   expect((await screen.findByLabelText("Canonical evidence details")).textContent).toContain("BLOCKED");
   expect(get).toHaveBeenCalledTimes(3);
 });
+
+it("labels pending scope loading and then a successful empty response", async () => {
+  let finish!: (value: unknown) => void;
+  vi.mocked(get).mockImplementationOnce(() => new Promise(resolve => {finish = resolve;}));
+  render(<LabInput token="test" />);
+  expect(screen.getByText("Loading approved scopes…")).toBeTruthy();
+  expect(screen.queryByText("No backend-approved offline scopes available.")).toBeNull();
+  await act(async () => {finish([]);});
+  expect(screen.getByText("No backend-approved offline scopes available.")).toBeTruthy();
+});

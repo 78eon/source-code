@@ -7,15 +7,18 @@ export function buildGraph(
   edgeType = "",
 ) {
   const graph = new MultiDirectedGraph();
-  const count = dto.nodes.length;
-  dto.nodes.forEach((n, i) => {
+  const lanes = [...new Set(dto.nodes.map(n=>String(n.metadata.subnet ?? n.type)))].sort();
+  const positions = new Map<string,number>();
+  dto.nodes.forEach((n) => {
     if (nodeType && n.type !== nodeType) return;
     const match =
       !!search && n.label.toLowerCase().includes(search.toLowerCase());
-    const angle = (2 * Math.PI * i) / Math.max(count, 1);
+    const lane=String(n.metadata.subnet ?? n.type);
+    const ordinal=positions.get(lane) ?? 0;
+    positions.set(lane,ordinal+1);
     graph.addNode(n.id, {
-      x: Math.cos(angle),
-      y: Math.sin(angle),
+      x: lanes.indexOf(lane)*3,
+      y: -ordinal*2,
       size: match ? 14 : 9,
       highlighted: match,
       label: n.label,
@@ -29,6 +32,9 @@ export function buildGraph(
               CONFLICTING: "#e78090",
               UNKNOWN: "#7f9fbe",
               SYNTHETIC: "#b795df",
+              FOOTHOLD: "#67d9bd",
+              OBJECTIVE: "#f5c46a",
+              ACCESSED: "#ee9b89",
             } as Record<string, string>
           )[n.status.toUpperCase()] ?? "#7f9fbe"),
       fact: n,
@@ -42,7 +48,7 @@ export function buildGraph(
       graph.addEdgeWithKey(e.id, e.source, e.target, {
         label: e.type,
         size: 2,
-        color: "#637c92",
+        color: e.metadata.success === false ? "#e78090" : "#637c92",
         type: "arrow",
         fact: e,
       });

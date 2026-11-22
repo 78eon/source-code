@@ -79,6 +79,13 @@ def command(env, *, live=False):
             raise ValueError("Select an explicit isolated collector network namespace container")
         network = "container:" + anchor
         image = "localhost/security-rl-controlled-collector:dev"
+    research = Path(env.get("SECURITY_RL_REGISTERED_CAMPAIGN") or (
+        ROOT / "docs/research_evidence/MASTER_PROJECT_AUDIT/01_REGISTERED_CAMPAIGN/"
+        "onprem-generalisation-registered"
+    ))
+    research_args = (["-e", "SECURITY_RL_REGISTERED_CAMPAIGN=/app/registered-campaign",
+                      "-v", f"{research}:/app/registered-campaign:ro"]
+                     if (research / "protocol_manifest.json").is_file() else [])
     return [
         "podman", "run", "--rm", "--pull", "never", "--network", network,
         "--userns", "keep-id", "--user", f"{os.getuid()}:{os.getgid()}",
@@ -94,6 +101,7 @@ def command(env, *, live=False):
         "-v", f"{ROOT / 'configs/catalogues'}:/app/configs/catalogues:ro",
         "-v", f"{config_root}:{config_root}:ro",
         "-v", f"{state}:{state}:rw",
+        *research_args,
         image,
         "uvicorn", "rlredteam.api.workspace_runtime:create_configured_app", "--factory",
         "--host", "127.0.0.1", "--port", "8765",

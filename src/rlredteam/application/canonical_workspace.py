@@ -207,6 +207,11 @@ class CanonicalWorkspace:
             graph=graph,
             vulnerabilities=correlation,
         )
+        if section == "defenses":
+            return {**context, "data": {
+                "state": "UNAVAILABLE", "items": [],
+                "reason": "No attributable defense data available",
+            }}
         if section in basic:
             return {**context, "data": plain(basic[section])}
         if not source_ids:

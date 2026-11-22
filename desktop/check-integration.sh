@@ -45,6 +45,8 @@ common=(--network "container:$pg" -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/ap
 # on a busy host, while retaining the tests' existing connection timeout.
 podman run --rm "${common[@]}" "$api_image" python -c \
   'from rlredteam.storage.neo4j_projection import Neo4jProjectionStore; store = Neo4jProjectionStore.connect(wait_seconds=120); store.close()'
+# Initialize the disposable fixture with the same migration checked by /readiness.
+podman run --rm "${common[@]}" "$api_image" python -B scripts/analytical_runtime.py migrate
 podman run --rm "${common[@]}" -e SECURITY_RL_DESKTOP_INTEGRATION=1 "$api_image" \
   pytest -q -s -p no:cacheprovider tests/test_desktop_persisted_integration.py
 api=$(podman run -d "${common[@]}" \

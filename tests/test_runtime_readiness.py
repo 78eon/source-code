@@ -46,7 +46,7 @@ def test_operational_states(changes, state):
 
 def test_operator_actions_are_explicit_and_not_training():
     source = Path("scripts/analytical_runtime.py").read_text()
-    assert 'choices=["doctor","migrate","data"]' in source.replace(" ", "")
+    assert 'choices=["doctor","migrate","data","development-fixture"]' in source.replace(" ", "")
     assert "train(" not in source and ".step(" not in source
     assert "SOURCE_VALIDATED_NOT_IMPORTED" in source
 

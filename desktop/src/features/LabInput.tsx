@@ -7,6 +7,7 @@ import { LiveLabCollection } from "./LiveLabCollection";
 type Scope = { scope_id: string; name: string };
 
 export function LabInput({ token, allowOfflineProcessing = false }: { token: string; allowOfflineProcessing?: boolean }) {
+  const [scopesLoading, setScopesLoading] = useState(true);
   const [scopes, setScopes] = useState<Scope[]>([]);
   const [scope, setScope] = useState("");
   const [authorization, setAuthorization] = useState("");
@@ -23,6 +24,7 @@ export function LabInput({ token, allowOfflineProcessing = false }: { token: str
   useEffect(() => {
     generation.current++;
     const abort = new AbortController();
+    setScopesLoading(true);
     setScopes([]);
     setScope("");
     setResult(null);
@@ -34,7 +36,8 @@ export function LabInput({ token, allowOfflineProcessing = false }: { token: str
       .catch(() => {
         if (!abort.signal.aborted)
           setError("Offline input unavailable: backend-approved scopes must be configured.");
-      });
+      })
+      .finally(() => { if (!abort.signal.aborted) setScopesLoading(false); });
     return () => { generation.current++; abort.abort(); };
   }, [token]);
   return (
@@ -85,6 +88,8 @@ export function LabInput({ token, allowOfflineProcessing = false }: { token: str
         </label>}
         <button disabled={busy || !scopes.length}>{processOffline ? "Process approved offline import" : "Validate offline preview"}</button>
       </form>
+      {scopesLoading && <p role="status">Loading approved scopes…</p>}
+      {!scopesLoading && !scopes.length && !error && <p>No backend-approved offline scopes available.</p>}
       {error && <p role="alert">{error}</p>}
       {result !== null && <pre aria-label="Preview result">{JSON.stringify(result, null, 2)}</pre>}
       {importedJobId && <CanonicalWorkspace key={importedJobId} token={token} importedJobId={importedJobId} />}

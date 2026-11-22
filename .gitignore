@@ -57,3 +57,6 @@ desktop/src-tauri/research-ppo-*.json
 
 # Local meeting/debug evidence
 TODAY_MEETING_EVIDENCE_2026-11-19/
+
+# Local project documentation, supervisor/agent notes, phase records and dissertation material
+docs/

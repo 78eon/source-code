@@ -8,6 +8,7 @@ import { GraphWorkspace } from "../features/topology/GraphWorkspace";
 import { PathExplorer } from "../features/attack-paths/PathExplorer";
 import { TwinView, SimulationView } from "../features/RecordedViews";
 import { RegisteredResearchView, type RegisteredResults } from "../features/RegisteredResearchView";
+import { AssessmentOperations } from "../features/AssessmentOperations";
 import { EngineeringSimulations } from "../features/EngineeringSimulations";
 import { LabInput } from "../features/LabInput";
 import { CanonicalWorkspace } from "../features/CanonicalWorkspace";
@@ -34,6 +35,7 @@ const endpoints: Record<Page, string> = {
   Reports: "reports",
 };
 export function App() {
+  const [assessmentId,setAssessmentId]=useState<string|null>(null);
   const [selectedPublication,setSelectedPublication]=useState<Fact|null>(null);
   const [openTrajectories,setOpenTrajectories]=useState(false);
   const [engineeringTab,setEngineeringTab] = useState<"new"|"saved"|"runs"|"examples">("saved");
@@ -125,6 +127,7 @@ export function App() {
           }
           return;
         }
+        if(assessmentId&&["Dashboard","Vulnerabilities","Assets","Attack Paths","Reports","Evidence"].includes(page)){setHealth("CONNECTED");return;}
         const readiness = await get<{state?: string; message?: string; graphs?:number}>("readiness", token, abort.signal);
         if (readiness?.state && readiness.state !== "EVIDENCE_READY") {
           if (!abort.signal.aborted) {
@@ -163,7 +166,7 @@ export function App() {
       }
     })();
     return () => abort.abort();
-  }, [page, token, reload, backendReady,selectedPublication]);
+  }, [page, token, reload, backendReady,selectedPublication,assessmentId]);
   const rows = Array.isArray(data) ? (data as Fact[]) : [];
   if (native && showSettings)
     return (
@@ -274,8 +277,8 @@ export function App() {
         ) : showLabInput ? (
           <LabInput token={token} allowOfflineProcessing />
         ) : page === "Simulations" ? (
-          <EngineeringSimulations token={token} initialTab={engineeringTab} onGraph={g=>{setSelectedPublication(g);setPage("Network Graph");}} onResearch={()=>{setOpenTrajectories(true);setPage("Registered Research");}} />
-        ) : loading ? (
+          <EngineeringSimulations token={token} initialTab={engineeringTab} onSelection={(id,identity)=>{setAssessmentId(id);setSelectedPublication(identity);}} onOperations={id=>{setAssessmentId(id);setPage("Dashboard");}} onGraph={g=>{setSelectedPublication(g);setPage("Network Graph");}} onResearch={()=>{setOpenTrajectories(true);setPage("Registered Research");}} />
+        ) : assessmentId&&["Dashboard","Vulnerabilities","Assets","Attack Paths","Reports","Evidence"].includes(page) ? (<AssessmentOperations id={assessmentId} page={page} token={token}/>) : loading ? (
           <p className="empty">Loading recorded evidence…</p>
         ) : error ? (
           <section className="notice" role="alert">
@@ -295,6 +298,7 @@ export function App() {
           <>{selectedPublication&&<p>Selected assessment: {String(selectedPublication.assessment)} · Report: {String(selectedPublication.report_id)} · Graph: {String(selectedPublication.graph_id)}</p>}<GraphWorkspace key={(data as GraphDTO).graph_id} data={data as GraphDTO} token={token} /></>
         ) : page === "Dashboard" ? (
           <>
+            <p>No engineering assessment selected. Open a saved assessment to select its Security Operations workspace.</p><details><summary>Canonical database counters</summary>
             <div className="cards">
               {[
                 ["Selected graph-node occurrences", data ? rows.length : null],
@@ -318,7 +322,7 @@ export function App() {
                 </section>
               ))}
             </div>
-            <section className="notice">
+            </details><section className="notice">
               <p>Counts include node occurrences across selected stored graphs; repeated assets may occur.
                 Reads include at most 50 stored graphs/reports. Completeness and truncation are unknown.
                 Empty selections do not establish an empty environment.</p>

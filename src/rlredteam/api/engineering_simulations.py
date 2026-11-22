@@ -156,6 +156,12 @@ def router(authorize, service=None):
     def result(identifier: str):
         return invoke(lambda: configured().result(identifier))
 
+    @routes.get("/{identifier}/workspace")
+    def workspace(identifier: str):
+        from rlredteam.application.engineering_simulation.workspace import summary
+        from .services import ReadOnlyRepository
+        return invoke(lambda: summary(configured(), identifier, ReadOnlyRepository()))
+
     @routes.get("/{identifier}/graph")
     def graph(identifier: str, view: str = "all"):
         from rlredteam.application.engineering_simulation.graph import graph_dto

@@ -44,3 +44,16 @@ htmlcov/
 
 # Packaged weight bundles — dual-use, released only by explicit decision (CP-31)
 dist/
+
+# Local runtime simulation state
+configs/engineering_simulations/
+
+# Generated desktop assessment exports
+desktop/src-tauri/engineering-*.pdf
+desktop/src-tauri/engineering-*.html
+desktop/src-tauri/research-ppo-*.pdf
+desktop/src-tauri/research-ppo-*.html
+desktop/src-tauri/research-ppo-*.json
+
+# Local meeting/debug evidence
+TODAY_MEETING_EVIDENCE_2026-11-19/

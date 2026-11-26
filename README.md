@@ -4,7 +4,7 @@
 
 ### Reinforcement Learning for Autonomous Attack-Path Discovery in Simulated Enterprise Networks
 
-**MSc Research Project · RLRedTeam · Simulation-First · Evidence-Driven**
+** Research Project · RLRedTeam · Simulation · Evidence-Driven**
 
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![RL](https://img.shields.io/badge/RL-PPO-8A2BE2)](#reinforcement-learning)
